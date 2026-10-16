@@ -1,0 +1,71 @@
+# Simulación (empresa de práctica) — Faro API (motor Python)
+# GENERADO por tools/generar_http.py desde /openapi.json. No editar a mano: regenerar.
+# Requiere la extensión REST Client (humao.rest-client) y el entorno "local" (abajo a la
+# derecha en VS Code, o Ctrl+Alt+E). Claves en http/.env (copia http/env.ejemplo).
+
+@clave = {{$dotenv FARO_CLAVE}}
+@clave_cert = {{$dotenv FARO_CLAVE_CERT}}
+@dte_id = 1
+
+### Iniciar sesión (ejecuta esto primero; el token dura 60 min)
+# @name login
+POST {{base}}/api/v1/auth/login
+Content-Type: application/json
+
+{"username": "{{usuario}}", "password": "{{clave}}"}
+
+###
+@token = {{login.response.body.access_token}}
+
+### Empresa demo, documentos emitidos y folio siguiente por tipo
+# @name estado_api_v1_simulacion_estado_get
+GET {{base}}/api/v1/simulacion/estado
+Authorization: Bearer {{token}}
+
+### Emitir un documento ficticio (se firma y timbra, nunca se envía)
+# @name emitir_api_v1_simulacion_emitir_post
+POST {{base}}/api/v1/simulacion/emitir
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "tipo_dte": 33,
+  "items": [
+    {
+      "nombre": "Servicio de ejemplo",
+      "precio_unitario": 10000
+    }
+  ]
+}
+
+### Nota de crédito que anula por el total un documento demo
+# @name anular_api_v1_simulacion_anular_dte_id_post
+POST {{base}}/api/v1/simulacion/anular/{{dte_id}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "motivo": "Anula documento"
+}
+
+### Nota de débito demo: anula una nota de crédito, o agrega un cobro que faltó a un documento
+# @name nota_debito_api_v1_simulacion_nota_debito_dte_id_post
+POST {{base}}/api/v1/simulacion/nota-debito/{{dte_id}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "motivo": "<motivo>",
+  "monto": 1,
+  "nombre": "Servicio de ejemplo"
+}
+
+### Un documento demo con su PDF en base64
+# @name ver_api_v1_simulacion_documentos_dte_id_get
+GET {{base}}/api/v1/simulacion/documentos/{{dte_id}}
+Authorization: Bearer {{token}}
+
+### Borrar todo lo de la empresa demo y volver al folio 1
+# @name reiniciar_api_v1_simulacion_reiniciar_post
+POST {{base}}/api/v1/simulacion/reiniciar
+Authorization: Bearer {{token}}

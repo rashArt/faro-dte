@@ -1,0 +1,66 @@
+# Consulta pública — Faro API (motor Python)
+# GENERADO por tools/generar_http.py desde /openapi.json. No editar a mano: regenerar.
+# Requiere la extensión REST Client (humao.rest-client) y el entorno "local" (abajo a la
+# derecha en VS Code, o Ctrl+Alt+E). Claves en http/.env (copia http/env.ejemplo).
+
+@clave = {{$dotenv FARO_CLAVE}}
+@clave_cert = {{$dotenv FARO_CLAVE_CERT}}
+
+### Iniciar sesión (ejecuta esto primero; el token dura 60 min)
+# @name login
+POST {{base}}/api/v1/auth/login
+Content-Type: application/json
+
+{"username": "{{usuario}}", "password": "{{clave}}"}
+
+###
+@token = {{login.response.body.access_token}}
+
+### Formulario
+# @name formulario_consulta_get
+GET {{base}}/consulta/
+
+### Consultar
+# @name consultar_consulta_post
+POST {{base}}/consulta/
+Content-Type: application/x-www-form-urlencoded
+
+rut_emisor=77777777-7&tipo_dte=33&folio=0&monto_total=<monto_total>
+
+### Formulario
+# @name formulario_consulta_get
+GET {{base}}/consulta
+
+### Consultar
+# @name consultar_consulta_post
+POST {{base}}/consulta
+Content-Type: application/x-www-form-urlencoded
+
+rut_emisor=77777777-7&tipo_dte=33&folio=0&monto_total=<monto_total>
+
+### Consultar Api
+# opcionales: fecha=<fecha>
+# @name consultar_api_consulta_api_get
+GET {{base}}/consulta/api
+    ?rut=77777777-7
+    &tipo=1
+    &folio=0
+    &monto=1
+
+### Descargar Xml
+# opcionales: fecha=<fecha>
+# @name descargar_xml_consulta_xml_get
+GET {{base}}/consulta/xml
+    ?rut=77777777-7
+    &tipo=1
+    &folio=0
+    &monto=1
+
+### Descargar Pdf
+# opcionales: fecha=<fecha>
+# @name descargar_pdf_consulta_pdf_get
+GET {{base}}/consulta/pdf
+    ?rut=77777777-7
+    &tipo=1
+    &folio=0
+    &monto=1

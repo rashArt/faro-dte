@@ -230,7 +230,7 @@ def mostrar_resumen():
      }}
 
   {BOLD}Para producción con Docker:{RESET}
-     {BOLD}docker-compose up -d{RESET}
+     {BOLD}cp docker-compose.example.yml docker-compose.yml && docker compose up -d{RESET}
 
   {BOLD}Archivos importantes:{RESET}
      .env          → Configuración (editar)

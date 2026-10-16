@@ -1,0 +1,57 @@
+# Flujo 1 — Practicar con EMPRESA DEMO SPA (sin SII, sin certificado real).
+# Escrito a mano. Ejecuta los bloques en orden (Ctrl+Alt+R sobre cada uno).
+# Firma y timbra de verdad con un CAF y un certificado ficticios; nunca envía al SII.
+
+@clave = {{$dotenv FARO_CLAVE}}
+
+### 1. Iniciar sesión
+# @name login
+POST {{base}}/api/v1/auth/login
+Content-Type: application/json
+
+{"username": "{{usuario}}", "password": "{{clave}}"}
+
+###
+@token = {{login.response.body.access_token}}
+
+### 2. Estado de la empresa de práctica (folio siguiente por tipo)
+GET {{base}}/api/v1/simulacion/estado
+Authorization: Bearer {{token}}
+
+### 3. Emitir una boleta de práctica (precio con IVA incluido)
+# @name boleta
+POST {{base}}/api/v1/simulacion/emitir
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"tipo_dte": 39, "items": [{"nombre": "Café americano", "precio_unitario": 2500, "cantidad": 2}]}
+
+###
+@dte_id = {{boleta.response.body.dte_id}}
+
+### 4. Emitir una factura de práctica a un cliente (precio neto)
+POST {{base}}/api/v1/simulacion/emitir
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "tipo_dte": 33,
+  "receptor": {"rut": "76111111-6", "razon_social": "CLIENTE DEMO LTDA", "giro": "Comercio",
+               "direccion": "Av. Siempreviva 742", "comuna": "Santiago"},
+  "items": [{"nombre": "Servicio mensual", "precio_unitario": 10000}]
+}
+
+### 5. Ver el documento (incluye el PDF en base64)
+GET {{base}}/api/v1/simulacion/documentos/{{dte_id}}
+Authorization: Bearer {{token}}
+
+### 6. Anular la boleta con una nota de crédito
+POST {{base}}/api/v1/simulacion/anular/{{dte_id}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"motivo": "Anula documento"}
+
+### 7. Volver a cero (borra todo lo de la empresa de práctica)
+POST {{base}}/api/v1/simulacion/reiniciar
+Authorization: Bearer {{token}}

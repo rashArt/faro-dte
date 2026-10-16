@@ -54,7 +54,7 @@ un buscador público de consulta. Pensado para **1 dueño que opera varias empre
 Base: `http://<host>:8000` (o tu dominio). Auth: `Authorization: Bearer <token>` (ver §5).
 
 ### Emitir un DTE o boleta (el endpoint que importa)
-`POST /api/v1/dte/emitir` — rutea por tipo (39/41 = boleta; 33/34/56/61 = factura). Devuelve folio, TrackID, PDF y estado.
+`POST /api/v1/dte/emitir` — rutea por tipo (39/41 = boleta; 33/34/56/61 = factura). Genera, firma, timbra y guarda; devuelve folio, PDF y el sobre firmado (`xml_envio_b64`). **No envía al SII**: el envío es `POST /api/v1/dte/enviar` (facturas) o `POST /api/v1/boletas/enviar` (boletas; solo Go y Rust). Detalle y brechas del motor Python: [`deploy/INTEGRACION.md`](deploy/INTEGRACION.md).
 
 ```bash
 curl -X POST http://localhost:8000/api/v1/dte/emitir \
@@ -71,7 +71,7 @@ curl -X POST http://localhost:8000/api/v1/dte/emitir \
 ### Otros endpoints útiles
 | Método | Ruta | Para qué | Auth |
 |---|---|---|---|
-| POST | `/api/v1/dte/emitir` | Emitir (folio→firma→envío→BD) | Sí |
+| POST | `/api/v1/dte/emitir` | Emitir (folio→firma→BD; sin envío) | Sí |
 | POST | `/api/v1/dte/previsualizar` | Pre-vuelo (firma+PDF sin enviar) | Sí |
 | GET | `/api/v1/estado/...` | Estado de un envío por TrackID | mixto |
 | GET | `/api/v1/monitoreo/folios?rut=` | Salud de folios (restantes/estado) | Sí |
@@ -131,7 +131,7 @@ todo el dominio (emitir, folios, estado, diagnóstico) sin que le expliques la A
 
 ## 6. Operación (lo que corre solo)
 
-- **Despliegue**: contenedor Docker (Dockge), datos en volumen, `.env` montado. Ver `docs/` del repo.
+- **Despliegue**: contenedor Docker, datos en volumen, `.env` montado. Una instancia por empresa, API en la red interna: [`deploy/README.md`](deploy/README.md).
 - **Folios**: se reponen solos (`FOLIOS_AUTO_*`); si el SII bloquea (anti-acaparamiento), avisa "requiere humano" por el webhook.
 - **Buscador**: `https://<tu-dominio>/consulta` — público, muestra solo boletas reales.
 - **Ambiente**: `SII_AMBIENTE=certificacion|produccion` conmuta endpoints y resolución.
@@ -140,7 +140,7 @@ todo el dominio (emitir, folios, estado, diagnóstico) sin que le expliques la A
 | Variable | Para qué |
 |---|---|
 | `SII_AMBIENTE` | `certificacion` / `produccion` |
-| `DATABASE_URL` | Ruta de la BD (SQLite) |
+| `DATABASE_URL` | Ruta de la BD (solo SQLite; en Docker, dentro del volumen: `sqlite:////app/storage/dte_database.db`. Postgres: [`deploy/POSTGRESQL.md`](deploy/POSTGRESQL.md)) |
 | `DTE_MASTER_KEY` | Cifra los certificados del keystore (¡guárdala!). Con PIN en la app de escritorio (Rust) sale del `.env` y queda envuelta en `boveda.json` |
 | `JWT_SECRET_KEY` | Firma los JWT |
 | `MCP_AUTH_TOKEN` | Token (API key) del servidor MCP para IA/integraciones |

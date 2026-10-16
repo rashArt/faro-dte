@@ -1,0 +1,68 @@
+# ============================================
+# Faro (motor Python) - Docker Compose de ejemplo
+# ============================================
+# Plantilla. Cópiala y ajústala en cada despliegue; `docker-compose.yml` está en .gitignore
+# para que cada servidor tenga el suyo sin ensuciar el repo:
+#
+#   cp .env.example .env                       # SIEMPRE antes de levantar (si no existe,
+#                                              # Docker crea un DIRECTORIO .env y falla)
+#   cp docker-compose.example.yml docker-compose.yml
+#   docker compose up -d
+#   docker compose logs -f faro
+#
+# Despliegue por cliente (una instancia por empresa, API solo en la red interna, Traefik
+# opcional para el buscador público): docs/deploy/README.md.
+
+services:
+  faro:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: faro-dte:local
+    restart: unless-stopped
+    # Dos usos del mismo .env:
+    #  - env_file: lo pasa al ENTORNO del proceso. Sin esto, ADMIN_PASSWORD (que main.py lee
+    #    con os.environ, no desde el archivo) se ignora.
+    #  - el montaje: el archivo que lee pydantic-settings y los scripts de certificación.
+    env_file: .env
+    environment:
+      - TZ=America/Santiago
+      # La base DENTRO del volumen. El default (`sqlite:///./dte_database.db`) la deja en
+      # /app, fuera del volumen: se pierde (usuarios, certificados, CAF, folios, documentos)
+      # cada vez que se recrea el contenedor. Verificado 2026-10-15.
+      - DATABASE_URL=sqlite:////app/storage/dte_database.db
+    volumes:
+      - faro-data:/app/storage
+      - faro-logs:/app/logs
+      - ./.env:/app/.env:ro
+    # Sin `ports`: la API queda solo en la red de Docker y tus productos la llaman como
+    # http://faro:8000. Para probar en tu computador, publica el puerto SOLO en localhost:
+    # ports:
+    #   - "127.0.0.1:8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8000/health').raise_for_status()"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - faro
+    # Buscador público por Traefik (opcional; ver docs/deploy/README.md). Requiere
+    # DOMINIO_PUBLICO_BOLETAS en .env con el mismo host: ese host solo ve /consulta*.
+    # labels:
+    #   - traefik.enable=true
+    #   - traefik.docker.network=traefik
+    #   - traefik.http.routers.faro-consulta.rule=Host(`boletas.ejemplo.cl`)
+    #   - traefik.http.routers.faro-consulta.entrypoints=websecure
+    #   - traefik.http.routers.faro-consulta.tls.certresolver=le
+    #   - traefik.http.services.faro-consulta.loadbalancer.server.port=8000
+
+volumes:
+  faro-data:
+  faro-logs:
+
+networks:
+  faro:
+  # Con Traefik, agrega su red externa aquí y al servicio:
+  # traefik:
+  #   external: true

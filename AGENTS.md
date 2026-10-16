@@ -15,8 +15,8 @@ python setup.py
 # Iniciar servidor
 uvicorn main:app --reload --port 8000
 
-# Con Docker
-docker-compose up -d
+# Con Docker (docker-compose.yml es local e ignorado: se copia del ejemplo)
+cp docker-compose.example.yml docker-compose.yml && docker compose up -d
 ```
 
 **Usuario admin:** se crea en el primer arranque con una **contraseña aleatoria** que se
@@ -114,17 +114,24 @@ curl -X POST http://localhost:8000/api/v1/auth/login \
 ## Docker
 
 ```bash
+# Primera vez: cada despliegue tiene su docker-compose.yml (ignorado por git)
+cp .env.example .env
+cp docker-compose.example.yml docker-compose.yml   # descomenta `ports` para usarlo local
+
 # Build y run
-docker-compose up -d
+docker compose up -d --build
 
 # Logs
-docker-compose logs -f dte-api
+docker compose logs -f faro
 
 # Detener
-docker-compose down
+docker compose down
 ```
 
-Volumen persistente: `dte-chile-data` (BD + storage)
+Volumen persistente `faro-data` → `/app/storage`. La base va ahí porque el compose fija
+`DATABASE_URL=sqlite:////app/storage/dte_database.db`; con el default quedaba fuera del volumen
+y se perdía al recrear el contenedor. Despliegue por cliente (red interna, Traefik, Postgres):
+[`docs/deploy/`](docs/deploy/README.md).
 
 ## Common Tasks
 

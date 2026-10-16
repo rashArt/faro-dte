@@ -1,0 +1,53 @@
+# Canal MIPYME (gratuito del SII) — Faro API (motor Python)
+# GENERADO por tools/generar_http.py desde /openapi.json. No editar a mano: regenerar.
+# Requiere la extensión REST Client (humao.rest-client) y el entorno "local" (abajo a la
+# derecha en VS Code, o Ctrl+Alt+E). Claves en http/.env (copia http/env.ejemplo).
+
+@clave = {{$dotenv FARO_CLAVE}}
+@clave_cert = {{$dotenv FARO_CLAVE_CERT}}
+@rut_empresa = 1
+
+### Iniciar sesión (ejecuta esto primero; el token dura 60 min)
+# @name login
+POST {{base}}/api/v1/auth/login
+Content-Type: application/json
+
+{"username": "{{usuario}}", "password": "{{clave}}"}
+
+###
+@token = {{login.response.body.access_token}}
+
+### Lo que el SII engine en Go (app/) necesita para operar esta empresa: claves recordadas y rutas
+# @name contexto_siiengine_api_v1_mipyme_contexto_siiengine_rut_empr
+GET {{base}}/api/v1/mipyme/contexto-siiengine/{{rut_empresa}}
+Authorization: Bearer {{token}}
+
+### Entrar al portal MIPYME y leer (sin emitir)
+# @name diagnostico_api_v1_mipyme_diagnostico_post
+POST {{base}}/api/v1/mipyme/diagnostico
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "rut_empresa": "77777777-7"
+}
+
+### Importar el historial de emitidos del gratuito (con PDF)
+# @name importar_api_v1_mipyme_importar_post
+POST {{base}}/api/v1/mipyme/importar
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "rut_empresa": "77777777-7"
+}
+
+### Entrar al gratuito del SII e importar lo emitido (una sola sesión)
+# @name sincronizar_api_v1_mipyme_sincronizar_post
+POST {{base}}/api/v1/mipyme/sincronizar
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "rut_empresa": "77777777-7"
+}

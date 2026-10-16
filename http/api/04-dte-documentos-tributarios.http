@@ -1,0 +1,227 @@
+# DTE - Documentos Tributarios — Faro API (motor Python)
+# GENERADO por tools/generar_http.py desde /openapi.json. No editar a mano: regenerar.
+# Requiere la extensión REST Client (humao.rest-client) y el entorno "local" (abajo a la
+# derecha en VS Code, o Ctrl+Alt+E). Claves en http/.env (copia http/env.ejemplo).
+
+@clave = {{$dotenv FARO_CLAVE}}
+@clave_cert = {{$dotenv FARO_CLAVE_CERT}}
+@dte_id = 1
+
+### Iniciar sesión (ejecuta esto primero; el token dura 60 min)
+# @name login
+POST {{base}}/api/v1/auth/login
+Content-Type: application/json
+
+{"username": "{{usuario}}", "password": "{{clave}}"}
+
+###
+@token = {{login.response.body.access_token}}
+
+### Últimos documentos emitidos (folio, estado, TrackID)
+# opcionales: limite=25, tipo_dte=33, estado=<estado>, rut_emisor=77777777-7
+# @name listar_documentos_api_v1_dte_documentos_get
+GET {{base}}/api/v1/dte/documentos
+Authorization: Bearer {{token}}
+
+### Datos del emisor configurado en el motor (EMPRESA_* del .env)
+# @name emisor_configurado_api_v1_dte_emisor_get
+GET {{base}}/api/v1/dte/emisor
+Authorization: Bearer {{token}}
+
+### Empresas emisoras presentes en la BD (para filtrar)
+# @name emisores_documentos_api_v1_dte_documentos_emisores_get
+GET {{base}}/api/v1/dte/documentos/emisores
+Authorization: Bearer {{token}}
+
+### PDF de un documento (motor o canal MIPYME)
+# @name pdf_documento_api_v1_dte_documentos_dte_id_pdf_get
+GET {{base}}/api/v1/dte/documentos/{{dte_id}}/pdf
+Authorization: Bearer {{token}}
+
+### (Re)generar el PDF de un documento desde su XML firmado
+# @name regenerar_pdf_documento_api_v1_dte_documentos_dte_id_pdf_pos
+POST {{base}}/api/v1/dte/documentos/{{dte_id}}/pdf
+Authorization: Bearer {{token}}
+
+### XML firmado de un documento
+# @name xml_documento_api_v1_dte_documentos_dte_id_xml_get
+GET {{base}}/api/v1/dte/documentos/{{dte_id}}/xml
+Authorization: Bearer {{token}}
+
+### Generar un DTE (XML estructurado y firmado)
+# @name generar_dte_api_v1_dte_generar_post
+POST {{base}}/api/v1/dte/generar
+Authorization: Bearer {{token}}
+Content-Type: multipart/form-data; boundary=FaroLimite
+
+--FaroLimite
+Content-Disposition: form-data; name="dte_json"
+
+<dte_json>
+--FaroLimite
+Content-Disposition: form-data; name="certificado_p12"; filename="cert_demo.p12"
+Content-Type: application/octet-stream
+
+< ../../tests/dorado/fixtures/cert_demo.p12
+--FaroLimite
+Content-Disposition: form-data; name="password_certificado"
+
+<password_certificado>
+--FaroLimite--
+
+### Generar DTE desde JSON (sin archivos, para pruebas)
+# @name generar_dte_simple_api_v1_dte_generar_simple_post
+POST {{base}}/api/v1/dte/generar-simple
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "tipo_dte": 33,
+  "emisor": {
+    "rut": "77777777-7",
+    "razon_social": "EMPRESA DEMO SPA",
+    "giro": "Cafetería",
+    "codigo_actividad": 561000,
+    "direccion": "Calle Ficticia 123",
+    "comuna": "Santiago",
+    "ciudad": "Santiago"
+  },
+  "receptor": {
+    "rut": "76111111-6",
+    "razon_social": "CLIENTE DEMO LTDA"
+  },
+  "items": [
+    {
+      "numero_linea": 1,
+      "nombre": "Servicio de ejemplo",
+      "precio_unitario": 10000
+    }
+  ]
+}
+
+### Enviar DTE firmado al SII
+# @name enviar_dte_api_v1_dte_enviar_post
+POST {{base}}/api/v1/dte/enviar
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "xml_envio_b64": "<xml_envio_b64>",
+  "certificado_p12_b64": "<certificado_p12_b64>",
+  "password_certificado": "<password_certificado>",
+  "rut_empresa": "77777777-7",
+  "dv_empresa": "7"
+}
+
+### Validar XML del DTE contra el esquema XSD oficial del SII
+# @name validar_xml_api_v1_dte_validar_xml_post
+POST {{base}}/api/v1/dte/validar-xml
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "xml_b64": "<xml_b64>"
+}
+
+### Generar PDF de la representación gráfica del DTE
+# @name generar_pdf_api_v1_dte_pdf_post
+POST {{base}}/api/v1/dte/pdf
+Authorization: Bearer {{token}}
+Content-Type: application/x-www-form-urlencoded
+
+dte_json=<dte_json>
+
+### Generar PDF desde JSON directo
+# @name generar_pdf_simple_api_v1_dte_pdf_simple_post
+POST {{base}}/api/v1/dte/pdf-simple
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "tipo_dte": 33,
+  "emisor": {
+    "rut": "77777777-7",
+    "razon_social": "EMPRESA DEMO SPA",
+    "giro": "Cafetería",
+    "codigo_actividad": 561000,
+    "direccion": "Calle Ficticia 123",
+    "comuna": "Santiago",
+    "ciudad": "Santiago"
+  },
+  "receptor": {
+    "rut": "76111111-6",
+    "razon_social": "CLIENTE DEMO LTDA"
+  },
+  "items": [
+    {
+      "numero_linea": 1,
+      "nombre": "Servicio de ejemplo",
+      "precio_unitario": 10000
+    }
+  ]
+}
+
+### Previsualizar un DTE (firmado+timbrado+PDF) sin enviarlo
+# @name previsualizar_api_v1_dte_previsualizar_post
+POST {{base}}/api/v1/dte/previsualizar
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "dte": {
+    "tipo_dte": 33,
+    "emisor": {
+      "rut": "77777777-7",
+      "razon_social": "EMPRESA DEMO SPA",
+      "giro": "Cafetería",
+      "codigo_actividad": 561000,
+      "direccion": "Calle Ficticia 123",
+      "comuna": "Santiago",
+      "ciudad": "Santiago"
+    },
+    "receptor": {
+      "rut": "76111111-6",
+      "razon_social": "CLIENTE DEMO LTDA"
+    },
+    "items": [
+      {
+        "numero_linea": 1,
+        "nombre": "Servicio de ejemplo",
+        "precio_unitario": 10000
+      }
+    ]
+  },
+  "cert_id": 1
+}
+
+### Emitir DTE de forma orquestada
+# @name emitir_dte_orquestado_api_v1_dte_emitir_post
+POST {{base}}/api/v1/dte/emitir
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "dte": {
+    "tipo_dte": 33,
+    "emisor": {
+      "rut": "77777777-7",
+      "razon_social": "EMPRESA DEMO SPA",
+      "giro": "Cafetería",
+      "codigo_actividad": 561000,
+      "direccion": "Calle Ficticia 123",
+      "comuna": "Santiago",
+      "ciudad": "Santiago"
+    },
+    "receptor": {
+      "rut": "76111111-6",
+      "razon_social": "CLIENTE DEMO LTDA"
+    },
+    "items": [
+      {
+        "numero_linea": 1,
+        "nombre": "Servicio de ejemplo",
+        "precio_unitario": 10000
+      }
+    ]
+  }
+}

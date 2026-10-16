@@ -1,0 +1,8 @@
+{
+  // Entornos de REST Client para http/**/*.http (cambiar con Ctrl+Alt+E). Las claves NO van
+  // aquí: se leen de http/.env (ignorado por git; plantilla en http/env.ejemplo).
+  "rest-client.environmentVariables": {
+    "$shared": { "usuario": "admin" },
+    "local": { "base": "http://localhost:8000" }
+  }
+}

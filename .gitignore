@@ -71,3 +71,10 @@ AuthKey_*
 *.keychain-db
 *.bundle
 .auditoria-local.txt
+
+# Docker Compose: cada despliegue (local o de un cliente) tiene el suyo, copiado de
+# docker-compose.example.yml. Ver docs/deploy/README.md.
+docker-compose.yml
+docker-compose.override.yml
+compose.yml
+compose.override.yml

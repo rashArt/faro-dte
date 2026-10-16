@@ -43,7 +43,7 @@ source .venv/bin/activate
 
 python setup.py                              # create .env, SQLite DB, admin user
 uvicorn main:app --reload --port 8000        # run API (docs at /docs, /redoc)
-docker-compose up -d                         # run containerized (volume: dte-chile-data)
+cp docker-compose.example.yml docker-compose.yml && docker compose up -d   # containerized; docker-compose.yml is git-ignored (per deployment), see docs/deploy/
 
 # Tests are plain scripts, not pytest — run them directly:
 .venv/bin/python test_mvp.py                 # core modules smoke test (no server)
@@ -104,7 +104,7 @@ comportamiento (corpus dorado, contrato dorado); cualquier cambio en una ruta se
 - **La resolución del SII depende del ambiente y de la empresa** (L4): para la carátula usa `core.resolucion.resolucion_emisor(rut)`; `settings.resolucion` es solo el valor por defecto del ambiente. Nunca `sii_fecha_resolucion`/`sii_numero_resolucion` a pelo (son los de producción → `CRT-3-19` en certificación).
 - **La bóveda con PIN existe solo en el motor Rust** (`nucleo-rs/src/servidor/boveda.rs`, 2026-10-13): con `boveda.json` en la carpeta de datos el motor arranca bloqueado y `cifrar`/`descifrar` fallan con `MENSAJE_BLOQUEADA` → 423 `boveda_bloqueada`. `Servidor::cifrar` devuelve `Result`; no asumas un Fernet siempre disponible. Python y Go no la tienen a propósito (es de la app de escritorio); la interfaz lo detecta por el 404 de `GET /api/v1/boveda`.
 - **Los datos del emisor (razón social, giro, código de actividad, dirección) son por negocio** (tabla `negocios`, `PUT /api/v1/keystore/negocios/{id}`, pantalla "Mi empresa" de la app, 2026-10-13). `EMPRESA_*` del `.env` / `settings.empresa_*` es solo el valor heredado para instalaciones viejas; no agregues lógica nueva que dependa de él.
-- `.p12`/`.pfx` certificates are processed **in memory only** — never persist them to disk or the DB. A local `firma.pfx` (path configurable via `DTE_CERT_PATH`) is used as a dev fallback.
+- `.p12`/`.pfx` certificates are **never stored in plaintext**: they are signed with in memory, and persisted only **encrypted** (Fernet with `DTE_MASTER_KEY`, `.p12` and password) in the keystore (`core/keystore.py`, L6). Never write them in clear to disk, the DB, logs or a public path. A local `firma.pfx` (path configurable via `DTE_CERT_PATH`) is used as a dev fallback.
 - Certification status: the boleta certification (39/41) is **complete** (2026-07-22, `docs/CERTIFICACION.md`); facturas in certification are accepted but the full 16-case set still depends on T33/T61 folios the SII rate-limits (`docs/LECCIONES-SII.md`). Read those two docs before working on certification; the old `task.md` is a local, git-ignored history file.
 - Generated artifacts live under `storage/` (`dtes/`, `pdfs/`, `cafs/`, and `dtes_cert/`/`pdfs_cert/` for certification runs); results summaries are `storage/resultados_*.json`.
 - Adding a new DTE type: extend `TipoDTE` in `core/dte.py`, add to `NOMBRES_DTE` in `core/pdf_gen.py`, and handle exempt-IVA logic in `calcular_totales`.

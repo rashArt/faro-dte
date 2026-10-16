@@ -1,0 +1,54 @@
+# Autenticación — Faro API (motor Python)
+# GENERADO por tools/generar_http.py desde /openapi.json. No editar a mano: regenerar.
+# Requiere la extensión REST Client (humao.rest-client) y el entorno "local" (abajo a la
+# derecha en VS Code, o Ctrl+Alt+E). Claves en http/.env (copia http/env.ejemplo).
+
+@clave = {{$dotenv FARO_CLAVE}}
+@clave_cert = {{$dotenv FARO_CLAVE_CERT}}
+@user_id = 1
+
+### Iniciar sesión (ejecuta esto primero; el token dura 60 min)
+# @name login
+POST {{base}}/api/v1/auth/login
+Content-Type: application/json
+
+{"username": "{{usuario}}", "password": "{{clave}}"}
+
+###
+@token = {{login.response.body.access_token}}
+
+### Iniciar sesión
+# @name login_api_v1_auth_login_post
+POST {{base}}/api/v1/auth/login
+Content-Type: application/json
+
+{
+  "username": "admin",
+  "password": "{{clave}}"
+}
+
+### Registrar nuevo usuario
+# @name registro_api_v1_auth_registro_post
+POST {{base}}/api/v1/auth/registro
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "username": "admin",
+  "password": "{{clave}}"
+}
+
+### Listar usuarios
+# @name listar_todos_usuarios_api_v1_auth_usuarios_get
+GET {{base}}/api/v1/auth/usuarios
+Authorization: Bearer {{token}}
+
+### Desactivar usuario
+# @name eliminar_usuario_api_v1_auth_usuarios_user_id_delete
+DELETE {{base}}/api/v1/auth/usuarios/{{user_id}}
+Authorization: Bearer {{token}}
+
+### Obtener información del usuario actual
+# @name obtener_perfil_api_v1_auth_me_get
+GET {{base}}/api/v1/auth/me
+Authorization: Bearer {{token}}

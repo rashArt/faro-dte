@@ -29,6 +29,7 @@ cuando haya una versión firmada. Lo que sigue es para quien prefiere el motor c
 git clone https://github.com/SebastianMoyano/faro-dte.git
 cd faro-dte
 cp .env.example .env      # la configuración; los valores por defecto sirven para empezar
+cp docker-compose.example.yml docker-compose.yml   # y descomenta el bloque `ports`
 docker compose up -d      # levanta el servidor en segundo plano
 ```
 
@@ -51,6 +52,7 @@ Guárdala. *(Alternativa: pon `ADMIN_PASSWORD=tu-clave` en el `.env` **antes** d
 
 ## Paso 2 — Abrir la interfaz
 
+- **La interfaz** (la misma de la app Faro, con la empresa de práctica): http://localhost:8000/app
 - **Swagger** (probar la API haciendo clic): http://localhost:8000/docs
 - **Gestión de API keys** (para conectar tu propia app luego): http://localhost:8000/apikeys
 
