@@ -8,6 +8,7 @@ empresa cliente, con la API solo en la red interna y sin la interfaz gráfica a 
 |---|---|
 | este `README.md` | decisiones, arquitectura, despliegue paso a paso, operación |
 | [`PLAN.md`](PLAN.md) | **el plan del fork**: hallazgos verificados, decisiones y fases (migraciones, transacción e idempotencia, Postgres, autenticación) |
+| [`CONVENCIONES.md`](CONVENCIONES.md) | reglas del fork: idioma (español en todo), base de datos, migraciones, API, código y cómo traer cambios de upstream |
 | [`ARQUITECTURA.md`](ARQUITECTURA.md) | lo que hay medido, el estándar objetivo y los tres caminos (recomendado: cascarón nuevo, mismo corazón SII) |
 | [`INTEGRACION.md`](INTEGRACION.md) | la API actual tal como es hoy (alta del cliente, emitir, estado, consulta pública) |
 | [`POSTGRESQL.md`](POSTGRESQL.md) | SQLite y PostgreSQL con SQLAlchemy Core + Alembic (hoy **no** está soportado) |

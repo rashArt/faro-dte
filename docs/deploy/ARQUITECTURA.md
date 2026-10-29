@@ -46,7 +46,7 @@ lo protege byte a byte (15/15 en la imagen, con LF).
 1. **Capas:** rutas (HTTP y validación) → servicios (casos de uso, dueños de la transacción) →
    repositorios (SQL) y adaptadores (SII, archivos, caché). El corazón SII es una biblioteca
    pura que los servicios llaman.
-2. **Una transacción por caso de uso.** `EmitirDocumento` reserva la `Idempotency-Key`, consume
+2. **Una transacción por caso de uso.** `EmitirDocumento` reserva el `id_externo` de la venta, consume
    el folio e inserta la fila en la misma transacción. Firma y archivos van después, y su
    resultado se registra en la fila. Ningún adaptador escribe en la base por su cuenta.
 3. **Política async:** las rutas que llaman código bloqueante son `def`, para que FastAPI las

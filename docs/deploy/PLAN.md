@@ -8,7 +8,8 @@
 > producción y otra base de código exigiría volver a probar contra el SII real. El estándar de
 > [`ARQUITECTURA.md`](ARQUITECTURA.md) se aplica a cada parte que se toca. Alcance de esta etapa:
 > **base de datos y migraciones, transacciones y despliegue**. Go, Rust, las apps y el MCP quedan
-> intactos para poder traer cambios del repositorio original.
+> intactos para poder traer cambios del repositorio original. Reglas de nombres, migraciones y API:
+> [`CONVENCIONES.md`](CONVENCIONES.md).
 
 ## Objetivo
 
@@ -60,9 +61,9 @@ Gráfico del recorrido con estos puntos marcados: artifact "Recorrido del compro
 | Certificado | **Ya se guarda**: el `.p12` y su contraseña van cifrados con Fernet (`DTE_MASTER_KEY`) en el keystore de la base (`core/keystore.py`, columnas `p12_cifrado` y `clave_cifrada`), nunca en claro ni en una ruta pública (L6). Se sube **una vez** por el administrador. La emisión lo toma del negocio de la instancia (`negocios.cert_id`): el producto no lo envía. Se descifra una vez por proceso y queda en memoria, y se invalida al reemplazarlo. `DTE_MASTER_KEY` vive en los secretos del despliegue, no en `storage/` ni en la base |
 | Datos | SQLAlchemy 2 Core + **Alembic** desde el primer cambio de esquema; SQLite y Postgres con el mismo código y las mismas migraciones |
 | Transacción | una por caso de uso; el servicio es su dueño |
-| Idempotencia | `Idempotency-Key` obligatoria al emitir; la verdad está en la base, en la misma transacción que el folio |
+| Idempotencia | **Sin cabeceras ni claves que generar**: un campo `id_externo` en el mismo JSON (no se llama `referencia` para no confundirlo con `dte.referencias`, las referencias a otros documentos del SII), con el identificador que el producto ya tiene (pedido, venta, orden). Único por token de integración. Es obligatorio para los tokens de integración y opcional en la ruta actual: la UI `/app`, los `.http` y `tools/contrato_api.py` siguen funcionando sin él. La verdad está en la base, en la misma transacción que el folio. Reglas en [Política de folios](#política-de-folios) |
 | Autenticación | un **administrador** (JWT) y **tokens de integración** por producto, ligados a su cuenta, con rol `integracion`: emitir, enviar, consultar. Gestión (keystore, CAF, tokens) solo el administrador. Registro público cerrado |
-| Superficie | **no se corta nada**: las rutas actuales siguen montadas; las nuevas se suman. El emisor y el certificado pasan a ser opcionales (los completa el negocio de la instancia) |
+| Superficie | **no se corta nada**: las rutas actuales siguen montadas; las nuevas se suman. El emisor y el certificado pasan a ser opcionales (los completa el negocio de la instancia). Las únicas restricciones son de seguridad (#1, #8); cambian respuestas que `tools/contrato_api.py` compara con Go y Rust, así que en el fork ese gate excluye esos pasos (Go y Rust no se tocan) |
 | Caché | Redis opcional: token SII, resolución, límite de login y candado de líder. Nunca folios ni idempotencia |
 
 ## Fases
@@ -79,27 +80,53 @@ que la fase 2 adelanta.
   internas y las 24 referencias (CI `.github/workflows/dorado.yml`, `tools/prueba_final.sh`,
   docs, agentes). La condición: los que pasan hoy siguen pasando (`test_dorado`,
   `test_simulacion`, `test_mvp`, `test_mipyme`). Los que dependen del Llavero de macOS quedan
-  marcados como tales.
+  marcados como tales. Hoy importan `core` y usan `storage/` relativo a la raíz: se ejecutan
+  desde la raíz (`python tests/scripts/test_x.py`) con la raíz en `sys.path`, y pytest la toma
+  de `conftest.py`.
 - pytest + `TestClient`: fixture de instancia limpia (base temporal, CAF y certificado ficticios).
   Los hallazgos se escriben como **pruebas en rojo**.
 - `.gitattributes` (LF para `*.xml`, `*.json`, `*.sh`, fixtures), dependencias fijadas, imagen en CI.
 
 ### Fase 1 — Datos y migraciones (prioridad)
 Ver [`POSTGRESQL.md`](POSTGRESQL.md).
-- `Engine` de SQLAlchemy detrás de `core/database.py`, sin cambio de comportamiento.
+- **Primero, la prueba de concurrencia** (50 hilos sobre el mismo CAF, paso 1.5 de
+  [`POSTGRESQL.md`](POSTGRESQL.md)) en verde sobre el código actual. Es el gate de todo lo que sigue:
+  bajo SQLAlchemy, el driver de SQLite no emite `BEGIN` por su cuenta, y sin un evento que emita
+  `BEGIN IMMEDIATE` el folio deja de ser atómico (L7) **sin dar ningún error**.
+- `Engine` de SQLAlchemy detrás de `core/database.py`, sin cambio de comportamiento. Unos 50
+  lugares usan `get_db()`/`get_connection()` como una `sqlite3.Connection` (`execute`, `cursor`,
+  `rowcount`, `fetchone`, `executemany`): la fachada entrega un objeto con esa misma forma. Los 8
+  `lastrowid` pasan a `insertar()` con `RETURNING`. `core/models.py:311` abre su propia conexión
+  con `isolation_level=None`; pasa por la fachada.
+- `DATABASE_PATH` (`core/database.py:18`) se calcula reemplazando texto en la URL y queda
+  inválido con Postgres; lo usan `keystore` y `mipyme`. Se reemplaza por una función que solo
+  aplica a SQLite y por la URL enmascarada.
 - Alembic `0001_esquema_inicial` (13 tablas) para ambos dialectos; los `init_*` dejan de crear
-  tablas. `alembic upgrade head` en el despliegue; `downgrade` probado.
+  tablas e `init_db()` ejecuta `alembic upgrade head`, así que `setup.py`, los scripts y
+  `uvicorn` siguen arrancando solos. **Base existente** (la local de hoy o una de upstream): si ya
+  tiene las tablas y no tiene `alembic_version`, se marca con `stamp 0001` en vez de crearlas.
+  `downgrade` probado.
+- `tools/esquema_dorado.py` llama a `init_db()` y compara `sqlite_master` con Go: sigue sirviendo
+  si ignora `alembic_version`.
+- **Cambios de esquema de upstream:** hoy llegan como `ALTER` condicionales dentro de los `init_*`.
+  Al traerlos, cada uno se traduce a una migración nueva; si no, la columna falta en silencio.
+  Va como paso fijo de la guía para traer cambios de upstream.
 - Postgres (psycopg 3), folio con `SELECT … FOR UPDATE`, compose local con Postgres y pgAdmin
-  opcional.
+  opcional. `LIKE` distingue mayúsculas en Postgres: la búsqueda de `valores` usa `ILIKE` o
+  `lower()` para no cambiar el resultado.
 - Prueba de **actualización**: base en la versión N con datos → `upgrade` → la suite pasa.
 
 ### Fase 2 — Emisión transaccional e idempotencia (lo más importante)
-- Servicio `EmitirDocumento`: reserva `Idempotency-Key`, folio y fila `reservado` en **una**
-  transacción. Después firma, validación XSD (facturas y boletas), archivos por `dte_id` sin
-  sobrescribir y estado `generado`. Si falla, la fila queda en `error` con el motivo y el
-  reintento con la misma clave reutiliza el folio (#3, #5, #6).
+- **Prevalidación antes de tocar un folio:** largos y obligatorios del XSD (por ejemplo,
+  `GiroRecep` ≤ 40), RUT, totales y referencias en 56/61 (#15). Se hace en el servicio, no en
+  `core/dte.py`, que no se toca. Lo que falle aquí responde 422 y no gasta folio (#5).
+- Servicio `EmitirDocumento`: reserva el `id_externo`, el folio y la fila `reservado` en **una**
+  transacción. Después firma, validación XSD completa (facturas y boletas; el dry-run de
+  certificación ya valida el EnvioDTE de facturas), archivos por `dte_id` sin sobrescribir y
+  estado `generado`. Si falla, la fila queda en `error` con el motivo, y el folio sigue siendo de
+  esa fila (#3, #6). Reglas de reintento y corrección en [Política de folios](#política-de-folios).
 - Folio explícito solo para el administrador, validado contra `folio_siguiente` (#4).
-- `IntegrityError` → 409 (#7). Referencias obligatorias en 56/61 (#15).
+- `IntegrityError` → 409 (#7).
 - El servicio toma el **certificado del negocio** (keystore). `certificado_p12_b64` en el cuerpo
   queda solo por compatibilidad.
 - Se adelantan dos fugas críticas, de pocas líneas: `/auth/registro` exige administrador (#1) y
@@ -126,9 +153,59 @@ Ver [`POSTGRESQL.md`](POSTGRESQL.md).
 `docker-compose.example.yml` con Postgres (y Redis opcional), `alembic upgrade head` como paso
 explícito, respaldo con `pg_dump` + volumen `storage/` + `.env`.
 
+## Política de folios
+
+Un folio es el número legal del documento. Se gasta en tres momentos distintos, y cada uno tiene
+una respuesta distinta:
+
+| Dónde falla | Qué pasa con el folio | Qué hace el motor |
+|---|---|---|
+| **Antes de reservar** (datos inválidos) | no se toca | 422 con el detalle. Es donde deben caer casi todos los errores: la prevalidación de la fase 2 existe para eso |
+| **Después de reservar, antes de enviar al SII** (XSD, firma, disco, o el producto quiere cambiar algo) | el SII no lo conoce: el documento nunca salió | la fila (`error` o `generado`) es **dueña de su folio**. El producto vuelve a enviar el mismo JSON corregido con **el mismo `id_externo`**: se regenera con el mismo folio y los datos nuevos. No hay folio nuevo ni nada que anular |
+| **El SII lo rechaza** (`RCH`, `RFR`, `RCT`) | a verificar en certificación | se guarda `rechazado` con el motivo (#14). Si el SII admite reenviar con el mismo folio, la corrección con el mismo `id_externo` usa el mismo folio. Hasta confirmarlo, se trata como el caso siguiente |
+| **El SII lo aceptó** | es un documento legal | no se anula el folio: se corrige con nota de crédito o débito (61/56), que gasta un folio de ese tipo. Es el proceso legal, no un error del motor |
+
+### El `id_externo`
+
+El producto no genera ninguna clave ni agrega cabeceras. Manda su propio identificador de la
+venta en el mismo JSON, con su token Bearer:
+
+```http
+POST /api/v1/dte/emitir
+Authorization: Bearer <token de integración>
+Content-Type: application/json
+
+{ "id_externo": "pedido-1042", "dte": { "tipo_dte": 33, "receptor": { … }, "items": [ … ] } }
+```
+
+Respuesta: `dte_id`, `folio`, `estado` y los enlaces al XML y al PDF. Con esa sola regla
+(**"una venta, un `id_externo`"**) el motor resuelve reintento y corrección:
+
+| Llega el mismo `id_externo`… | Estado del documento | Respuesta |
+|---|---|---|
+| con el mismo JSON | cualquiera | 200 con el documento existente: mismo `dte_id` y folio. Es el reintento tras un timeout (#3) |
+| con el JSON **cambiado** | `error` o `generado` (no enviado) | **corrección**: se regenera con el mismo folio. El XML y el PDF anteriores se conservan como versión previa, no se sobrescriben |
+| con el JSON cambiado | `enviado`, `aceptado` | 409 con el `dte_id`: ya está en el SII y se corrige con nota de crédito |
+| mientras otra petición la procesa | `reservado` | 409 `en_curso`, sin esperar |
+
+- El motor compara un hash del JSON para distinguir reintento de corrección.
+- Una fila `reservado` huérfana (el proceso cayó a mitad) pasa a `error` después de un plazo.
+- Si el producto ya entregó el PDF al cliente final (una boleta impresa), corregirlo es decisión
+  del producto: el motor lo permite mientras no se haya enviado al SII.
+- Sin `id_externo` (solo la ruta actual, para la UI y el administrador), cada petición es un
+  documento nuevo, como hoy.
+
+**Folios abandonados.** Una fila en `error` que el producto nunca corrige deja un hueco en la
+numeración. Para que eso no obligue a anular: la siguiente emisión del mismo tipo toma primero un
+folio de una fila en `error` vencida (nunca enviada, nunca entregada; con candado en la base) y
+solo si no hay ninguna avanza `folio_siguiente`. El folio no se libera si el XML o el PDF ya se
+entregaron al producto. Lo que aun así quede sin usar (CAF vencido, por ejemplo) aparece en un
+reporte "folios por anular", para anularlos en el portal del SII.
+
 ## Riesgos
 
-- **Firma intocable (L2, L15):** ninguna fase toca `core/sobre.py` ni la generación del XML.
+- **Firma intocable (L2, L15):** ninguna fase toca `core/sobre.py` ni la generación del XML
+  (`core/dte.py`). Las validaciones nuevas (referencias 56/61, largos del XSD) van en el servicio.
   `test_dorado` es gate de cada fase.
 - **Folios reales (L1, L7, L10):** las fases 1 y 2 cambian cómo se consume un folio. Se prueban
   con el CAF ficticio y en certificación antes de producción.
