@@ -2,10 +2,12 @@
 test_mvp.py — Script de prueba local del MVP de DTE Chile.
 
 Ejecutar con:
-    python test_mvp.py
+    python tests/scripts/test_mvp.py
 
 No requiere servidor corriendo. Prueba los módulos directamente.
 """
+
+import _raiz  # noqa: F401,E402  (raíz del repo en sys.path y como cwd)
 
 import json
 import sys

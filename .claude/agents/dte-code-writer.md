@@ -37,7 +37,8 @@ Escribes código para el motor DTE (facturación electrónica del SII de Chile).
 
 ## Verificación
 
-- Los tests son **scripts planos, no pytest**: `.venv/bin/python test_boleta.py` (etc.).
+- Los tests históricos son **scripts planos, no pytest**, en `tests/scripts/`: `.venv/bin/python tests/scripts/test_boleta.py` (etc.).
+- La suite del fork es pytest (`tests/unit/`, `tests/api/`): `.venv/bin/python -m pytest`.
 - Corre **`test_boleta.py`, `test_robustez.py` y `test_mvp.py`** antes de dar algo por hecho.
 - **Si tocaste la firma o el sobre, un test local NO alcanza**: solo el SII (en
   **certificación**) valida eso. Dilo explícitamente en vez de declarar éxito.

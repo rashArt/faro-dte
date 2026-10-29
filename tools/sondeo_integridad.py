@@ -2,8 +2,8 @@
 """Sondeo de integridad de la API de emisión: duplicados, idempotencia, folios, registro abierto.
 
 Reproduce los hallazgos del 2026-10-15 (docs/deploy/PLAN.md, tabla Verificación). Es un sondeo, no la
-suite: cada prueba imprime OK o HALLAZGO con la evidencia. Cuando las correcciones existan,
-estas mismas pruebas pasan a `tests/api/` (pytest) y este archivo se borra.
+suite: cada prueba imprime OK o HALLAZGO con la evidencia, contra una instancia viva. Las mismas
+pruebas están en `tests/api/` (pytest) como `xfail` estrictos; este sondeo sirve para medir una imagen.
 
 ⚠️ DESTRUCTIVO: carga un CAF ficticio de EMPRESA DEMO SPA, crea un usuario `intruso` y deja la
 base con folios desordenados. Corre SOLO contra una instancia desechable, nunca contra la local

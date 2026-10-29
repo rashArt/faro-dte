@@ -9,9 +9,11 @@ Es un script plano (como el resto de los tests del repo), no pytest. Comprueba:
        - 500 SIN filtrar la traza interna (mensaje genérico).
   3. El servidor MCP registra sus herramientas.
 
-Uso:  .venv/bin/python test_robustez.py
+Uso:  .venv/bin/python tests/scripts/test_robustez.py
 """
 from __future__ import annotations
+
+import _raiz  # noqa: F401,E402  (raíz del repo en sys.path y como cwd)
 
 import asyncio
 import sys

@@ -5,8 +5,10 @@ Prueba offline (sin red) del módulo RCV: normalización del JSON facade,
 persistencia en la tabla nueva y agregación F29 (débito − crédito, con NC
 restando). No toca el pipeline de emisión/firma.
 
-Ejecutar:  .venv/bin/python test_rcv.py
+Ejecutar:  .venv/bin/python tests/scripts/test_rcv.py
 """
+
+import _raiz  # noqa: F401,E402  (raíz del repo en sys.path y como cwd)
 
 from core.rcv import (
     COMPRA,

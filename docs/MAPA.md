@@ -104,12 +104,14 @@ Punto de entrada único que rutea por tipo: **`core/orchestrator.py::emitir_docu
 source .venv/bin/activate                     # Python 3.14
 uvicorn main:app --reload --port 8000         # API (/docs, /redoc)
 
-# Tests: scripts planos, no pytest
-.venv/bin/python test_sobre.py                # ⭐ Ley L2: la firma que el SII acepta
-.venv/bin/python test_boleta.py               # boletas + RVD + scheduler + guardarraíles
-.venv/bin/python test_robustez.py             # errores, MCP, reintentos, hardening
-.venv/bin/python test_mvp.py                  # smoke de módulos core
-.venv/bin/python test_mipyme.py               # canal MIPYME en seco (no gasta folios)
+# Suite pytest del fork (tests/unit, tests/api)
+.venv/bin/python -m pytest
+# Scripts históricos (planos, no pytest), desde la raíz
+.venv/bin/python tests/scripts/test_sobre.py                # ⭐ Ley L2: la firma que el SII acepta
+.venv/bin/python tests/scripts/test_boleta.py               # boletas + RVD + scheduler + guardarraíles
+.venv/bin/python tests/scripts/test_robustez.py             # errores, MCP, reintentos, hardening
+.venv/bin/python tests/scripts/test_mvp.py                  # smoke de módulos core
+.venv/bin/python tests/scripts/test_mipyme.py               # canal MIPYME en seco (no gasta folios)
 ```
 
 ## Estado del motor (actualizado 2026-10-12; las filas de Python son de 2026-07-22)

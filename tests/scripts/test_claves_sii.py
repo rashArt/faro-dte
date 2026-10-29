@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Claves del SII en el keystore (canal gratuito): se guardan cifradas solo a pedido, el estado
 no revela valores, se descifran solo para uso interno, y se olvidan. Base temporal."""
+
+import _raiz  # noqa: F401,E402  (raíz del repo en sys.path y como cwd)
 import os
 import sys
 import tempfile
@@ -9,7 +11,7 @@ from pathlib import Path
 TMP = Path(tempfile.mkdtemp(prefix="claves_"))
 os.environ["DATABASE_URL"] = f"sqlite:///{TMP}/k.db"
 os.environ["DTE_MASTER_KEY"] = "N5XocTCf4chC1T6lnoGbPbbl84WAIx-RiZMeTy4jkvM="
-sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(_raiz.RAIZ))
 from core import database, keystore  # noqa: E402
 
 assert str(database.DATABASE_PATH).startswith(str(TMP))

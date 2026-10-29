@@ -1,0 +1,15 @@
+# Fin de línea LF en el árbol de trabajo, también en Windows (core.autocrlf=true).
+# Una imagen Docker construida desde un checkout con CRLF rompe el corpus dorado (0/15)
+# y los scripts .sh: hallazgo #9 de docs/deploy/PLAN.md.
+* text=auto eol=lf
+
+# Los XSD del SII se guardan tal como los publica el SII (varios con CRLF): no se tocan.
+*.xsd -text
+
+# Binarios explícitos (certificados de prueba, imágenes).
+*.p12 binary
+*.pfx binary
+*.png binary
+*.ico binary
+*.icns binary
+*.gz binary

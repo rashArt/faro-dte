@@ -16,9 +16,11 @@ Necesita un CAF real (para un TED válido) y la clave del .pfx: `TEST_PFX_PASS` 
 (`security add-generic-password -s dte-cert -a $USER -w '<clave>'`).
 NO envía nada al SII.
 
-Uso:  .venv/bin/python test_sobre.py
+Uso:  .venv/bin/python tests/scripts/test_sobre.py
 """
 from __future__ import annotations
+
+import _raiz  # noqa: F401,E402  (raíz del repo en sys.path y como cwd)
 
 import base64
 import os

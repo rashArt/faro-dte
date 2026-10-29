@@ -22,14 +22,14 @@ jobs:
       - name: Los gates del gate (que los auditores detecten lo que deben)
         run: python tools/auditar_publico.py --autoprueba && python tools/auditar_release.py --autoprueba
       - name: Python puro == esperado (15 casos)
-        run: python test_dorado.py
+        run: python tests/scripts/test_dorado.py
       - uses: actions/setup-go@v5
         with: { go-version: "1.26", cache-dependency-path: nucleo/go.sum }
       - name: Núcleo Go — vet + tests (xsd, pdf417, portal, rcv, rvd, sii, siiengine, servidor)
         working-directory: nucleo
         run: go vet ./... && go test ./... && go build -o bin/nucleo-dorado ./cmd/nucleo-dorado && go build -o bin/nucleo-servidor ./cmd/nucleo-servidor
       - name: Go == esperado (port externo)
-        run: python test_dorado.py --port nucleo/bin/nucleo-dorado
+        run: python tests/scripts/test_dorado.py --port nucleo/bin/nucleo-dorado
       - uses: dtolnay/rust-toolchain@stable
         with: { components: clippy }
       - uses: Swatinem/rust-cache@v2
@@ -38,11 +38,11 @@ jobs:
         working-directory: nucleo-rs
         run: cargo test --quiet && cargo clippy --release --quiet -- -D warnings && cargo build --release --quiet
       - name: Rust == esperado (port externo)
-        run: python test_dorado.py --port nucleo-rs/target/release/nucleo-dorado
+        run: python tests/scripts/test_dorado.py --port nucleo-rs/target/release/nucleo-dorado
       - name: Esquema dorado (la base de Rust == la de Python)
         run: python tools/esquema_dorado.py --go nucleo-rs/target/release/nucleo-servidor
       - name: Mundo de práctica (sin red)
-        run: python test_simulacion.py
+        run: python tests/scripts/test_simulacion.py
       - name: Esquema dorado (la base de Go == la de Python)
         run: python tools/esquema_dorado.py --go nucleo/bin/nucleo-servidor
       - name: Contrato dorado (los dos motores, sin red)

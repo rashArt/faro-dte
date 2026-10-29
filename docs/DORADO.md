@@ -37,8 +37,8 @@ emisor `EMISOR_DEMO` de `core/simulacion.py`.
 ## Probar un port externo
 
 ```bash
-.venv/bin/python test_dorado.py --port "./nucleo/bin/nucleo-dorado"
-.venv/bin/python test_dorado.py --port ".venv/bin/python tests/dorado/port_ejemplo.py"   # ejemplo que pasa
+.venv/bin/python tests/scripts/test_dorado.py --port "./nucleo/bin/nucleo-dorado"
+.venv/bin/python tests/scripts/test_dorado.py --port ".venv/bin/python tests/dorado/port_ejemplo.py"   # ejemplo que pasa
 ```
 
 Por cada caso el runner ejecuta `<comando> <entrada.json> <fixtures/> <salida/>` con
@@ -50,8 +50,8 @@ lee y qué se escribe. El plan de port está en [`PLAN-PORT.md`](PLAN-PORT.md).
 ## Cómo se corre
 
 ```bash
-.venv/bin/python test_dorado.py              # compara; falla y muestra el primer byte distinto
-.venv/bin/python test_dorado.py --generar    # reescribe lo esperado (solo a propósito, ver abajo)
+.venv/bin/python tests/scripts/test_dorado.py              # compara; falla y muestra el primer byte distinto
+.venv/bin/python tests/scripts/test_dorado.py --generar    # reescribe lo esperado (solo a propósito, ver abajo)
 .venv/bin/python tests/dorado/generar_fixtures.py   # una sola vez; si se vuelve a correr cambian TODAS las firmas
 ```
 

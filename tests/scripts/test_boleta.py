@@ -13,9 +13,11 @@ El CAF de tipo 39/41 se SINTETIZA reusando la llave RSA de un CAF real de prueba
 no aceptaría un TED así (su FRMA no cubre ese TD), pero sirve para verificar estructura,
 firma y XSD sin depender de un timbraje que todavía no existe.
 
-Uso:  .venv/bin/python test_boleta.py
+Uso:  .venv/bin/python tests/scripts/test_boleta.py
 """
 from __future__ import annotations
+
+import _raiz  # noqa: F401,E402  (raíz del repo en sys.path y como cwd)
 
 import base64
 import os

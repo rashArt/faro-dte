@@ -240,10 +240,10 @@ siguen disponibles para la API. Router: `api/routes/mipyme.py`.
 
 ```bash
 # 1. En seco: valida el schema, el parser, los montos y la estructura del envío. Sin red.
-.venv/bin/python test_mipyme.py
+.venv/bin/python tests/scripts/test_mipyme.py
 
 # 2. Sesión real, solo lectura del form (no gasta folio). Pide la clave por consola.
-.venv/bin/python test_mipyme.py --live --usuario 12.345.678-9 --empresa 77.777.777-7
+.venv/bin/python tests/scripts/test_mipyme.py --live --usuario 12.345.678-9 --empresa 77.777.777-7
 
 # 3. Dry-run de una factura: sesión + form + payload, sin emitir.
 .venv/bin/python emitir_mipyme.py --usuario … --empresa … --receptor … --razon … --giro … \

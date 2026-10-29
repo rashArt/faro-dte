@@ -75,5 +75,5 @@ GET /api/v1/estado/track → 200 (48 ms) [rid=d2b6f0f0bb8a]
 ## Prueba
 
 ```bash
-.venv/bin/python test_robustez.py    # verifica envelope, 404/422/500, request-id y MCP
+.venv/bin/python tests/scripts/test_robustez.py    # verifica envelope, 404/422/500, request-id y MCP
 ```

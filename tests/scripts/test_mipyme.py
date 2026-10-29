@@ -9,10 +9,12 @@ test_mipyme.py — Blinda el canal MIPYME (`core/sii_mipyme.py`) SIN gastar foli
 Modo `--live`: abre sesión real, selecciona la empresa y LEE el form (paso gratis, no consume
 folio), luego cierra la sesión. Pide las claves por consola, nunca por argumentos.
 
-Uso:  .venv/bin/python test_mipyme.py
-      .venv/bin/python test_mipyme.py --live --usuario 12.345.678-9 --empresa 77.777.777-7
+Uso:  .venv/bin/python tests/scripts/test_mipyme.py
+      .venv/bin/python tests/scripts/test_mipyme.py --live --usuario 12.345.678-9 --empresa 77.777.777-7
 """
 from __future__ import annotations
+
+import _raiz  # noqa: F401,E402  (raíz del repo en sys.path y como cwd)
 
 import argparse
 import logging

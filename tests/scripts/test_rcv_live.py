@@ -9,9 +9,9 @@ Ventas del SII (producción). Resuelve las dos preguntas abiertas:
      ¿Hay que usar los endpoints sin "Export" iterando por tipo de documento?
 
 Uso:
-    .venv/bin/python test_rcv_live.py --rut 76111111-6 --periodo 202506
+    .venv/bin/python tests/scripts/test_rcv_live.py --rut 76111111-6 --periodo 202506
     # con otro certificado (PEM):
-    .venv/bin/python test_rcv_live.py --rut ... --periodo ... \
+    .venv/bin/python tests/scripts/test_rcv_live.py --rut ... --periodo ... \
         --cert /ruta/cert.pem --key /ruta/key.pem
 
 RUT por defecto configurable vía DTE_RUT_EMPRESA (default ficticio si no se define).
@@ -20,6 +20,8 @@ OJO: el SII rate-limitea (HTTP 429) si se consulta mucho. Si sale 429, esperar y
 reintentar más tarde. No correr en bucle.
 """
 from __future__ import annotations
+
+import _raiz  # noqa: F401,E402  (raíz del repo en sys.path y como cwd)
 
 import argparse
 import json

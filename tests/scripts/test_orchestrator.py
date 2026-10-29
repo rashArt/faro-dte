@@ -1,3 +1,4 @@
+import _raiz  # noqa: F401,E402  (raíz del repo en sys.path y como cwd)
 import base64
 import os
 import sqlite3

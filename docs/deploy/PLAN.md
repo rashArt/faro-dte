@@ -41,9 +41,9 @@ SQLite → Postgres (las instancias del fork parten de cero).
 | 6 | Error tras consumir el folio | Por código: el folio se confirma en su propia transacción y la fila al final. Un error entre medio lo deja gastado sin registro | alta |
 | 7 | `IntegrityError` | 500 y conexión HTTP cortada | media |
 | 8 | `contexto-emision` | entrega certificado y **clave privada en PEM** a cualquier JWT | alta |
-| 9 | Imagen construida desde Windows | `autocrlf` → corpus dorado 0/15; con LF, **15/15** | media |
+| 9 | Imagen construida desde Windows | `autocrlf` → corpus dorado 0/15; con LF, **15/15** | media · ✅ corregido (fase 0) |
 | 10 | N+1 | **No hay** en la API: listados paginados, ~5 consultas por emisión | — |
-| 11 | Dependencias sin fijar | `mcp` 2.x rompe `mcp_server.py` | media |
+| 11 | Dependencias sin fijar | `mcp` 2.x rompe `mcp_server.py` | media · ✅ corregido (fase 0) |
 | 12 | Event loop | `/health` de 19 ms a **1.533 ms** con 8 emisiones en paralelo: 72 rutas `async def` con trabajo bloqueante | alta |
 | 13 | Token del SII | se pide de nuevo en cada envío o consulta (un `ClienteSII` por petición) | media |
 | 14 | Veredicto del SII | ningún flujo guarda `aceptado`/`rechazado` en `dtes`; queda en `enviado` | media |
@@ -76,16 +76,29 @@ que la fase 2 adelanta.
 - ✅ `http/` con REST Client (80 operaciones generadas por `tools/generar_http.py` + flujos a mano).
 - ✅ `tools/sondeo_integridad.py` (reproduce #1, #3, #4, #5).
 - ✅ Diagnóstico de arquitectura ([`ARQUITECTURA.md`](ARQUITECTURA.md)).
-- **Reubicar los 13 `test_*.py` de la raíz** en `tests/scripts/`. Se corrigen sus rutas
-  internas y las 24 referencias (CI `.github/workflows/dorado.yml`, `tools/prueba_final.sh`,
-  docs, agentes). La condición: los que pasan hoy siguen pasando (`test_dorado`,
-  `test_simulacion`, `test_mvp`, `test_mipyme`). Los que dependen del Llavero de macOS quedan
-  marcados como tales. Hoy importan `core` y usan `storage/` relativo a la raíz: se ejecutan
-  desde la raíz (`python tests/scripts/test_x.py`) con la raíz en `sys.path`, y pytest la toma
-  de `conftest.py`.
-- pytest + `TestClient`: fixture de instancia limpia (base temporal, CAF y certificado ficticios).
-  Los hallazgos se escriben como **pruebas en rojo**.
-- `.gitattributes` (LF para `*.xml`, `*.json`, `*.sh`, fixtures), dependencias fijadas, imagen en CI.
+- ✅ **Los 13 `test_*.py` de la raíz están en `tests/scripts/`** (con `git mv`, la historia se
+  conserva). `tests/scripts/_raiz.py` deja la raíz en `sys.path` y como directorio de trabajo, así
+  que se corren igual que antes: `python tests/scripts/test_x.py`. Referencias corregidas en CI,
+  `tools/prueba_final.sh`, `CLAUDE.md`, `AGENTS.md`, docs y agentes. En la imagen pasan
+  `test_dorado` (15/15), `test_simulacion` (29), `test_mvp`, `test_mipyme` y ahora también
+  `test_robustez` (gracias a `mcp` 1.x). Los que usan el Llavero de macOS (`test_sobre`,
+  `test_boleta`, `test_libro`) y el binario Go (`test_fase2`) siguen igual que antes. Los
+  comentarios de `nucleo/` y `nucleo-rs/` que nombran `test_dorado.py` no se tocan (Go y Rust
+  intactos). En Windows, `test_simulacion` marca 1 de 29 por el separador de rutas (`\`): es previo
+  al cambio y no ocurre en Linux.
+- ✅ pytest (`pytest.ini`, `requirements-dev.txt`, `tests/conftest.py`): instancia limpia con base
+  y `storage/` temporales, secretos de prueba, programadores apagados, sin red (la ficha del SII
+  se simula) y CAF y certificado ficticios. `tests/unit/test_folios.py` (50 hilos, gate de la fase
+  1) y `tests/api/`. Los hallazgos #1, #3, #4/#7, #5, #8 y #15 son `xfail(strict=True)`: fallan
+  hoy por la razón esperada (verificado con `--runxfail`), y al corregirlos la suite se pone roja
+  hasta quitar la marca. Resultado: 4 verdes y 7 `xfail`, en Windows y en Linux.
+- ✅ `.gitattributes`: LF en todo el árbol de trabajo, también con `core.autocrlf=true`; los XSD
+  del SII quedan byte a byte como están. Una imagen construida desde Windows da 15/15 (#9).
+- ✅ `constraints.txt`: versiones fijadas resueltas en `python:3.12-slim`, aplicadas con
+  `pip install -r requirements.txt -c constraints.txt` (el `Dockerfile` ya lo hace;
+  `requirements.txt` queda como upstream). `mcp` en 1.30 (#11).
+- ✅ CI propio (`.github/workflows/servidor.yml`): suite pytest, imagen, corpus dorado dentro de
+  la imagen y `/health`.
 
 ### Fase 1 — Datos y migraciones (prioridad)
 Ver [`POSTGRESQL.md`](POSTGRESQL.md).

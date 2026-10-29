@@ -45,9 +45,11 @@ python setup.py                              # create .env, SQLite DB, admin use
 uvicorn main:app --reload --port 8000        # run API (docs at /docs, /redoc)
 cp docker-compose.example.yml docker-compose.yml && docker compose up -d   # containerized; docker-compose.yml is git-ignored (per deployment), see docs/deploy/
 
-# Tests are plain scripts, not pytest — run them directly:
-.venv/bin/python test_mvp.py                 # core modules smoke test (no server)
-.venv/bin/python test_orchestrator.py        # end-to-end orchestrator integration test
+# pytest suite (fork, docs/deploy/PLAN.md): temp DB, fictitious CAF/cert, open findings as strict xfail
+.venv/bin/python -m pytest
+# Historical tests are plain scripts in tests/scripts/ (not pytest) — run them from the repo root:
+.venv/bin/python tests/scripts/test_mvp.py                 # core modules smoke test (no server)
+.venv/bin/python tests/scripts/test_orchestrator.py        # end-to-end orchestrator integration test
 
 # Certification workflow (see docs/CERTIFICACION.md):
 .venv/bin/python dry_run_certificacion.py    # generate+validate 16 cases locally, NO network

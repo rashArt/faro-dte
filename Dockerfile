@@ -22,10 +22,10 @@ RUN apt-get update && \
     && rm -rf /var/lib/apt/lists/*
 
 # Copiar requirements primero (para cache de capas)
-COPY requirements.txt .
+COPY requirements.txt constraints.txt ./
 
 # Instalar dependencias Python
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt -c constraints.txt
 
 # Copiar el código de la aplicación
 COPY . .

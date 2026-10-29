@@ -1,0 +1,3 @@
+# Dependencias para correr la suite pytest (tests/unit, tests/api).
+-r requirements.txt
+pytest>=8.0

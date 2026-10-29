@@ -19,22 +19,33 @@
 | `crear_caf_mock_61.py` | CAF **falso** T61 | ⚠️ mock: inútil para probar firma (L11) |
 | `ejecutar_certificacion.sh` | Wrapper | ✅ arreglado — antes validaba un `.pfx` distinto del que cargaba `certificacion_sii.py`; ahora ambos usan `DTE_CERT_PATH`/`--cert` |
 
-## Tests — scripts planos, cero pytest
+## Tests
+
+Suite pytest del fork (`tests/unit/`, `tests/api/`, `tests/conftest.py`): instancia limpia con base y
+`storage/` temporales, CAF y certificado ficticios. Los hallazgos abiertos de `docs/deploy/PLAN.md` van
+como `xfail(strict=True)`: al corregirlos la suite avisa. CI: `.github/workflows/servidor.yml`.
 
 ```bash
-.venv/bin/python test_sobre.py       # ⭐ Ley L2: la firma que el SII acepta (32 checks)
-.venv/bin/python test_boleta.py      # 46 checks: boletas, RVD, scheduler, guardarraíles, EPR
-.venv/bin/python test_robustez.py    # 10 bloques: errores, envelope, MCP, auth, reintentos, XXE
-.venv/bin/python test_mvp.py         # smoke de imports + totales + PDF
-.venv/bin/python test_rcv.py         # RCV/F29 local (el mejor test del repo: asserts numéricos)
-.venv/bin/python test_rcv_live.py    # ⚠️ PRODUCCIÓN — exploración, sin asserts
-.venv/bin/python test_orchestrator.py
+.venv/bin/python -m pytest
+```
+
+Scripts históricos, planos (no pytest), en `tests/scripts/`. Se corren desde la raíz; `tests/scripts/_raiz.py`
+deja la raíz en `sys.path` y como directorio de trabajo.
+
+```bash
+.venv/bin/python tests/scripts/test_sobre.py       # ⭐ Ley L2: la firma que el SII acepta (32 checks)
+.venv/bin/python tests/scripts/test_boleta.py      # 46 checks: boletas, RVD, scheduler, guardarraíles, EPR
+.venv/bin/python tests/scripts/test_robustez.py    # 10 bloques: errores, envelope, MCP, auth, reintentos, XXE
+.venv/bin/python tests/scripts/test_mvp.py         # smoke de imports + totales + PDF
+.venv/bin/python tests/scripts/test_rcv.py         # RCV/F29 local (el mejor test del repo: asserts numéricos)
+.venv/bin/python tests/scripts/test_rcv_live.py    # ⚠️ PRODUCCIÓN — exploración, sin asserts
+.venv/bin/python tests/scripts/test_orchestrator.py
 ```
 
 ⚠️ **`test_boleta.py` necesita la clave del `.pfx`**: la saca de `TEST_PFX_PASS` o del Llavero
 (`security add-generic-password -s dte-cert-sebastian -a $USER -w '<clave>'`). Nunca hardcodeada.
 
-**Sin runner agregado, sin CI.** `test_boleta.py`/`test_robustez.py` salen con código ≠0 si
+**Sin runner agregado.** `test_dorado.py` y `test_simulacion.py` corren en CI (`dorado.yml`). `test_boleta.py`/`test_robustez.py` salen con código ≠0 si
 fallan; **`test_mvp.py` y `test_orchestrator.py` siempre salen 0** (no pueden reprobar).
 
 ### 🔴 Huecos de cobertura

@@ -7,10 +7,10 @@ pipeline de firma es determinista: misma entrada → mismos bytes de TED, DTE fi
 Este script fija todo eso, corre la capa PURA del motor (sin BD, sin red) sobre los casos de
 tests/dorado/casos/*.json y compara contra tests/dorado/esperado/<caso>/.
 
-    .venv/bin/python test_dorado.py            # compara (falla al primer byte distinto)
-    .venv/bin/python test_dorado.py --generar  # (re)escribe lo esperado — SOLO a propósito
-    .venv/bin/python test_dorado.py --port "<comando>"   # prueba un PORT externo (ver abajo)
-    .venv/bin/python test_dorado.py --port "<comando>" --parcial   # idem, pero solo lo que el port ya produce
+    .venv/bin/python tests/scripts/test_dorado.py            # compara (falla al primer byte distinto)
+    .venv/bin/python tests/scripts/test_dorado.py --generar  # (re)escribe lo esperado — SOLO a propósito
+    .venv/bin/python tests/scripts/test_dorado.py --port "<comando>"   # prueba un PORT externo (ver abajo)
+    .venv/bin/python tests/scripts/test_dorado.py --port "<comando>" --parcial   # idem, pero solo lo que el port ya produce
 
 Modo --port: por cada caso se ejecuta `<comando> <entrada.json> <fixtures/> <salida/>` con
 RELOJ_FIJO en el entorno; el port debe dejar en <salida/> los archivos ted.xml, dte.xml y
@@ -25,18 +25,20 @@ Ver docs/DORADO.md.
 """
 from __future__ import annotations
 
+import _raiz  # noqa: F401,E402  (raíz del repo en sys.path y como cwd)
+
 import json
 import sys
 from datetime import date
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(_raiz.RAIZ))
 from core import reloj  # noqa: E402
 from core.sobre import armar_sobre_firmado, firmar_documento_standalone  # noqa: E402
 
 HORA_FIJA = "2026-01-15T10:30:00"
 RESOLUCION = ("2026-01-01", 0)
-RAIZ = Path(__file__).parent / "tests" / "dorado"
+RAIZ = _raiz.RAIZ / "tests" / "dorado"
 FIX, CASOS, ESPERADO = RAIZ / "fixtures", RAIZ / "casos", RAIZ / "esperado"
 CERT_ARCHIVO, CERT_CLAVE = "cert_demo.p12", "demo"   # el corpus privado (storage/) los cambia
 

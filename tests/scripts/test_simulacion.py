@@ -2,12 +2,14 @@
 """Prueba del mundo de práctica (core/simulacion.py): sin red, sin empresa real.
 
 Emite una boleta, una factura y una nota de crédito con EMPRESA DEMO SPA, verifica folios,
-totales, archivos y marcas en la BD, y reinicia. Correr: .venv/bin/python test_simulacion.py
+totales, archivos y marcas en la BD, y reinicia. Correr: .venv/bin/python tests/scripts/test_simulacion.py
 """
+
+import _raiz  # noqa: F401,E402  (raíz del repo en sys.path y como cwd)
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(_raiz.RAIZ))
 from core import simulacion as sim
 from core.database import init_db
 from core.models import obtener_dte, listar_dtes

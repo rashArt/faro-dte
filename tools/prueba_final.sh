@@ -40,18 +40,18 @@ gate() { # gate "nombre" comando…
   fi
 }
 
-echo "== 1. corpus dorado (Python)"; gate corpus_python "$PY" test_dorado.py
-echo "== 2. práctica sin red (Python)"; gate practica_python "$PY" test_simulacion.py
+echo "== 1. corpus dorado (Python)"; gate corpus_python "$PY" tests/scripts/test_dorado.py
+echo "== 2. práctica sin red (Python)"; gate practica_python "$PY" tests/scripts/test_simulacion.py
 echo "== 3. núcleo Go: vet + tests"; gate go_vet bash -c 'cd nucleo && go vet ./...'; gate go_test bash -c 'cd nucleo && go test ./...'
 echo "== 4. corpus dorado (Go, port externo)"
 gate go_build bash -c 'cd nucleo && go build -o bin/nucleo-dorado ./cmd/nucleo-dorado && go build -o bin/nucleo-servidor ./cmd/nucleo-servidor'
-gate corpus_go "$PY" test_dorado.py --port nucleo/bin/nucleo-dorado
+gate corpus_go "$PY" tests/scripts/test_dorado.py --port nucleo/bin/nucleo-dorado
 if command -v cargo >/dev/null 2>&1; then
   echo "== 4b. núcleo Rust (fase 8): tests + clippy + corpus"
   gate rust_test bash -c 'cd nucleo-rs && cargo test --quiet 2>&1 | tail -3'
   gate rust_clippy bash -c 'cd nucleo-rs && cargo clippy --release --all-targets --quiet -- -D warnings'
   gate rust_build bash -c 'cd nucleo-rs && cargo build --release --quiet'
-  gate corpus_rust "$PY" test_dorado.py --port nucleo-rs/target/release/nucleo-dorado
+  gate corpus_rust "$PY" tests/scripts/test_dorado.py --port nucleo-rs/target/release/nucleo-dorado
 else
   echo "== 4b. núcleo Rust: sin cargo en este equipo, se omite (CI sí lo corre)"
 fi

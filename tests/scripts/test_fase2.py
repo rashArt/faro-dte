@@ -10,8 +10,10 @@ Comprueba, en una base temporal (nunca la real):
   3. Bajo concurrencia (procesos Go y hilos Python a la vez) no hay folios duplicados ni huecos.
   4. Los sobres de Go validan contra el XSD oficial.
 
-Correr: .venv/bin/python test_fase2.py   (necesita nucleo/bin/nucleo-emitir compilado)
+Correr: .venv/bin/python tests/scripts/test_fase2.py   (necesita nucleo/bin/nucleo-emitir compilado)
 """
+
+import _raiz  # noqa: F401,E402  (raíz del repo en sys.path y como cwd)
 import json
 import os
 import shutil
@@ -21,7 +23,7 @@ import tempfile
 import threading
 from pathlib import Path
 
-RAIZ = Path(__file__).parent
+RAIZ = _raiz.RAIZ
 TMP = Path(tempfile.mkdtemp(prefix="fase2_"))
 DB = TMP / "fase2.db"
 STORAGE = TMP / "storage"

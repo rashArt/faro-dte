@@ -17,9 +17,11 @@ Necesita la clave del .pfx de pruebas: `TEST_PFX_PASS` o el Llavero
 (`security add-generic-password -s dte-cert -a $USER -w '<clave>'`).
 NO envía nada al SII — el veredicto SRH real solo se resuelve certificando contra el SII vivo.
 
-Uso:  .venv/bin/python test_libro.py
+Uso:  .venv/bin/python tests/scripts/test_libro.py
 """
 from __future__ import annotations
+
+import _raiz  # noqa: F401,E402  (raíz del repo en sys.path y como cwd)
 
 import os
 import subprocess

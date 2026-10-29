@@ -61,7 +61,7 @@ memoria y **sin envío**. Ver `core/simulacion.py` y `api/routes/simulacion.py`
 - En boletas el precio se manda **con IVA incluido** (así las exige el SII); en facturas, neto.
   La app lo hace sola.
 
-Prueba sin red: `.venv/bin/python test_simulacion.py` (20 comprobaciones).
+Prueba sin red: `.venv/bin/python tests/scripts/test_simulacion.py` (20 comprobaciones).
 
 ## El núcleo en Go dentro de la app (fase 4 del port)
 

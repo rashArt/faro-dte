@@ -1,0 +1,38 @@
+name: servidor (fork)
+
+# Gates del motor Python como servidor de API (docs/deploy/PLAN.md). No reemplaza a
+# dorado.yml, que sigue midiendo la firma y los ports Go/Rust.
+on:
+  push:
+    paths: ["core/**", "api/**", "migraciones/**", "tests/**", "main.py", "alembic.ini", "Dockerfile",
+            "requirements*.txt", "constraints.txt", "pytest.ini", ".gitattributes", ".github/workflows/servidor.yml"]
+  pull_request:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12", cache: pip }
+      - run: pip install -r requirements-dev.txt -c constraints.txt
+      - name: Suite pytest (SQLite)
+        run: python -m pytest
+
+  imagen:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Construir la imagen
+        run: docker build -t faro-dte:ci .
+      - name: Corpus dorado dentro de la imagen (15/15, fin de línea LF)
+        # Los fixtures (.p12/.pem) no entran en la imagen (.dockerignore): se montan.
+        run: docker run --rm -v "$PWD/tests:/app/tests:ro" faro-dte:ci python tests/scripts/test_dorado.py
+      - name: Arranca y responde /health
+        run: |
+          docker run -d --name faro-ci -e ADMIN_PASSWORD=clave-de-prueba-ci faro-dte:ci
+          for i in $(seq 1 30); do
+            docker exec faro-ci python -c "import httpx; httpx.get('http://localhost:8000/health').raise_for_status()" && exit 0
+            sleep 2
+          done
+          docker logs faro-ci; exit 1

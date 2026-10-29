@@ -54,7 +54,7 @@ imprime UNA vez en el log (o la de `ADMIN_PASSWORD` si la defines). Guárdala y 
 python setup.py
 
 # Probar módulos sin servidor
-python test_mvp.py
+python tests/scripts/test_mvp.py
 
 # Iniciar con hot reload
 uvicorn main:app --reload --port 8000
@@ -103,7 +103,7 @@ JWT_SECRET_KEY=<generar con: openssl rand -hex 32>
 
 ```bash
 # Test básico de módulos
-python test_mvp.py
+python tests/scripts/test_mvp.py
 
 # Probar API completa
 curl -X POST http://localhost:8000/api/v1/auth/login \
@@ -187,5 +187,5 @@ red) con backoff exponencial + jitter, respetando `Retry-After`. Ya está enchuf
 `ClienteSII` y `PortalSII` (todas las llamadas al SII pasan por él). No reintenta 4xx.
 
 ```bash
-.venv/bin/python test_robustez.py   # envelope, 404/422/500, request-id, MCP, auth, reintentos
+.venv/bin/python tests/scripts/test_robustez.py   # envelope, 404/422/500, request-id, MCP, auth, reintentos
 ```
