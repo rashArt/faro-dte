@@ -161,16 +161,7 @@ class OrquestadorDTE:
             auto_folio = True
 
         # 3. Obtener CAF activo
-        caf_db = obtener_caf_activo(rut_emisor, tipo_dte)
-        if not caf_db:
-            raise FolioError(
-                f"No se encontró un CAF activo en la base de datos para el emisor "
-                f"{rut_emisor} y tipo DTE {tipo_dte}.",
-                detalle={"rut_emisor": rut_emisor, "tipo_dte": tipo_dte},
-            )
-
-        caf_xml_bytes = caf_db["caf_xml"].encode("utf-8")
-        caf_manejador = ManejadorCAF(caf_xml_bytes)
+        caf_manejador = self._caf_activo(rut_emisor, tipo_dte)
 
         # Validar rango del CAF
         if not caf_manejador.es_folio_valido(dte_input.folio):
@@ -189,22 +180,77 @@ class OrquestadorDTE:
                     f"No se pudo consumir el folio {dte_input.folio} en la base de datos "
                     f"(¿ya fue usado?).", detalle={"folio": dte_input.folio})
 
-        # 5. Calcular totales
-        totales = calcular_totales(dte_input.items, dte_input.tipo_dte)
+        # 5-6. Totales y TED
+        totales, ted_xml = self._timbrar(dte_input, caf_manejador)
+        return cert, totales, ted_xml
 
-        # 6. Generar el Timbre Electrónico DTE (TED) firmado por el CAF
+    @staticmethod
+    def _caf_activo(rut_emisor: str, tipo_dte: int) -> ManejadorCAF:
+        """El CAF activo del emisor y tipo, o `FolioError` si no hay."""
+        caf_db = obtener_caf_activo(rut_emisor, tipo_dte)
+        if not caf_db:
+            raise FolioError(
+                f"No se encontró un CAF activo en la base de datos para el emisor "
+                f"{rut_emisor} y tipo DTE {tipo_dte}.",
+                detalle={"rut_emisor": rut_emisor, "tipo_dte": tipo_dte},
+            )
+        return ManejadorCAF(caf_db["caf_xml"].encode("utf-8"))
+
+    @staticmethod
+    def _timbrar(dte_input: DTEInput, caf_manejador: ManejadorCAF) -> Tuple["object", str]:
+        """Totales y Timbre Electrónico (TED), firmado con la clave del CAF (no con el
+        certificado). Es local: no habla con el SII. `dte_input.folio` ya debe estar asignado."""
+        totales = calcular_totales(dte_input.items, dte_input.tipo_dte)
         primer_item = dte_input.items[0].nombre if dte_input.items else "Sin Items"
         ted_xml = caf_manejador.generar_ted(
             folio=dte_input.folio,
             rut_emisor=dte_input.emisor.rut,
             rut_receptor=dte_input.receptor.rut,
-            tipo_dte=tipo_dte,
+            tipo_dte=dte_input.tipo_dte.value,
             fecha_emision_dte=dte_input.fecha_emision,
             monto_total=totales.monto_total,
             razon_social_receptor=dte_input.receptor.razon_social,
             primer_item=primer_item,
         )
-        return cert, totales, ted_xml
+        return totales, ted_xml
+
+    def generar_documento(self, dte_input: DTEInput, cert: CertificadoDigital,
+                          ted_xml: str) -> Tuple[str, bytes]:
+        """DTE firmado standalone y su sobre EnvioDTE firmado (L2, `core/sobre.py`).
+
+        Devuelve `(dte_firmado_str, xml_envio_bytes)`: los bytes que valen, sin re-serializar.
+        No toca disco ni base: lo usan `emitir_dte` y el servicio de emisión."""
+        tipo_dte = dte_input.tipo_dte.value
+        # 7. Generar el documento XML del DTE (SIN firmar todavía)
+        generador = GeneradorDTE()
+        dte_xml_elem = generador.generar_documento_xml(dte_input, ted_xml=ted_xml)
+
+        # 8. Firmar el DTE STANDALONE y armar el sobre por STRING (ver core/sobre.py).
+        #    NO firmar el DTE ya embebido ni re-serializar después: el SII verifica la
+        #    firma del DTE extrayéndolo como documento suelto (sin el xmlns:xsi del sobre)
+        #    y cualquier reformateo posterior rompe el digest → DTE-3-505.
+        #    Verificado contra el SII vivo: TrackID 253113960 → ACEPTADOS: 1.
+        #    La resolución debe ser la del EMISOR (el SII la valida por RUT: la de otra
+        #    empresa/ambiente da CRT-3-19). Sale por-empresa del registro del SII, con
+        #    fallback al default de config. Ver core/resolucion.py.
+        fecha_resol, num_resol = resolucion_emisor(dte_input.emisor.rut)
+        dte_firmado_str = firmar_documento_standalone(dte_xml_elem, cert, tipo_dte,
+                                                      dte_input.folio)
+        xml_envio_bytes = armar_sobre_firmado(
+            documentos_firmados=[dte_firmado_str],
+            subtotales=[(tipo_dte, 1)],
+            rut_emisor=dte_input.emisor.rut,
+            rut_envia=cert.rut_emisor,
+            cert=cert,
+            fecha_resolucion=fecha_resol,
+            numero_resolucion=num_resol,
+            raiz="EnvioDTE",
+        )
+        return dte_firmado_str, xml_envio_bytes
+
+    def generar_pdf(self, dte_input: DTEInput, ted_xml: str) -> bytes:
+        """Representación impresa (carta) con el TED en PDF417."""
+        return generar_pdf_dte(dte_input, ted_xml=ted_xml, ambiente=self.ambiente)
 
     def emitir_dte(
         self,
@@ -236,32 +282,8 @@ class OrquestadorDTE:
         rut_emisor = dte_input.emisor.rut
         tipo_dte = dte_input.tipo_dte.value
 
-        # 7. Generar el documento XML del DTE (SIN firmar todavía)
-        generador = GeneradorDTE()
-        SII_NS = "http://www.sii.cl/SiiDte"
-        dte_xml_elem = generador.generar_documento_xml(dte_input, ted_xml=ted_xml)
-
-        # 8. Firmar el DTE STANDALONE y armar el sobre por STRING (ver core/sobre.py).
-        #    NO firmar el DTE ya embebido ni re-serializar después: el SII verifica la
-        #    firma del DTE extrayéndolo como documento suelto (sin el xmlns:xsi del sobre)
-        #    y cualquier reformateo posterior rompe el digest → DTE-3-505.
-        #    Verificado contra el SII vivo: TrackID 253113960 → ACEPTADOS: 1.
-        #    La resolución debe ser la del EMISOR (el SII la valida por RUT: la de otra
-        #    empresa/ambiente da CRT-3-19). Sale por-empresa del registro del SII, con
-        #    fallback al default de config. Ver core/resolucion.py.
-        fecha_resol, num_resol = resolucion_emisor(dte_input.emisor.rut)
-        dte_firmado_str = firmar_documento_standalone(dte_xml_elem, cert, tipo_dte,
-                                                      dte_input.folio)
-        xml_envio_bytes = armar_sobre_firmado(
-            documentos_firmados=[dte_firmado_str],
-            subtotales=[(tipo_dte, 1)],
-            rut_emisor=dte_input.emisor.rut,
-            rut_envia=cert.rut_emisor,
-            cert=cert,
-            fecha_resolucion=fecha_resol,
-            numero_resolucion=num_resol,
-            raiz="EnvioDTE",
-        )
+        # 7-8. DTE firmado standalone + sobre por string (L2).
+        dte_firmado_str, xml_envio_bytes = self.generar_documento(dte_input, cert, ted_xml)
 
         # 9. Guardar el DTE firmado tal cual se firmó (esos son los bytes que valen).
         storage_base = self.storage_base
@@ -270,7 +292,7 @@ class OrquestadorDTE:
         path_dte_xml.write_bytes(xml_dte_bytes)
 
         # 10. Generar el PDF y guardarlo en disco
-        pdf_bytes = generar_pdf_dte(dte_input, ted_xml=ted_xml, ambiente=self.ambiente)
+        pdf_bytes = self.generar_pdf(dte_input, ted_xml)
         path_dte_pdf = storage_base / "pdfs" / f"DTE_{tipo_dte}_{dte_input.folio}.pdf"
         path_dte_pdf.write_bytes(pdf_bytes)
 

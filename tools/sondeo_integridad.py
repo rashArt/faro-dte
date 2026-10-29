@@ -3,7 +3,8 @@
 
 Reproduce los hallazgos del 2026-10-15 (docs/deploy/PLAN.md, tabla Verificación). Es un sondeo, no la
 suite: cada prueba imprime OK o HALLAZGO con la evidencia, contra una instancia viva. Las mismas
-pruebas están en `tests/api/` (pytest) como `xfail` estrictos; este sondeo sirve para medir una imagen.
+pruebas están en `tests/api/` (pytest); este sondeo sirve para medir una imagen. Sin `id_externo`, cada
+petición es un documento nuevo a propósito: la idempotencia se pide con ese campo (fase 2).
 
 ⚠️ DESTRUCTIVO: carga un CAF ficticio de EMPRESA DEMO SPA, crea un usuario `intruso` y deja la
 base con folios desordenados. Corre SOLO contra una instancia desechable, nunca contra la local
@@ -109,8 +110,9 @@ def main() -> int:
     veredicto(len(folios) == 20 and len(set(folios)) == 20 and folios == list(range(folios[0], folios[0] + 20)),
               f"{len(folios)}/20 emitidas, folios únicos y consecutivos: {folios[0]}..{folios[-1]}" if folios else "sin emisiones")
 
-    print("\n3. Reintento de la MISMA petición (el producto no recibió la respuesta)")
+    print("\n3. Reintento de la MISMA petición con su id_externo (el producto no recibió la respuesta)")
     c = cuerpo("Factura pedido #123")
+    c["id_externo"] = "pedido-123"
     (_, a), (_, b) = emitir(c), emitir(c)
     veredicto(a.get("folio") == b.get("folio"), f"1er intento folio {a.get('folio')}, reintento folio {b.get('folio')}")
 

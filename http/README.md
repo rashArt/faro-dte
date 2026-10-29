@@ -16,7 +16,7 @@ Alternativa a Swagger para probar la API de Faro sin salir de VS Code. Requiere 
 | Carpeta | Contenido |
 |---|---|
 | `api/` | **Todas** las operaciones de `/openapi.json` (80, en 15 archivos, uno por grupo). Las genera `tools/generar_http.py`: no se editan a mano. Los cuerpos traen solo los campos obligatorios con datos ficticios; los opcionales se listan en un comentario `# opcionales:`. |
-| `flujos/` | Recorridos escritos a mano, en orden. `01-practica.http`: empresa de práctica (emitir, ver, anular, reiniciar) sin SII ni certificado real. |
+| `flujos/` | Recorridos escritos a mano, en orden. `01-practica.http`: empresa de práctica (emitir, ver, anular, reiniciar) sin SII ni certificado real. `02-cliente.http`: emitir como un producto, con el certificado del negocio e `id_externo` (reintento, 409, 422 sin gastar folio); la fase 5 le agrega el envío al SII. |
 
 Regenerar `api/` cuando cambie una ruta (con la instancia local arriba):
 

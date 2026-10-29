@@ -19,7 +19,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
-from core.auth import requerir_autenticacion
+from core.auth import requerir_autenticacion, requerir_clave_app
 from core.sii_mipyme import (ClienteMipyme, TIPO_FACTURA_EXENTA, armar_payload, ItemMipyme,
                              ReceptorMipyme, importar_emitidos)
 
@@ -57,7 +57,7 @@ def _resolver_claves(d: "DiagnosticoIn", usuario: dict) -> None:
 
 @router.get("/contexto-siiengine/{rut_empresa}",
             summary="Lo que el SII engine en Go (app/) necesita para operar esta empresa: claves recordadas y rutas")
-async def contexto_siiengine(rut_empresa: str, usuario: dict = Depends(requerir_autenticacion)) -> dict:
+async def contexto_siiengine(rut_empresa: str, usuario: dict = Depends(requerir_clave_app)) -> dict:
     """Entrega al cascarón de escritorio las claves del SII **recordadas** (descifradas del
     keystore) y las rutas absolutas de la base y del storage, para que `nucleo/siiengine` corra
     en el proceso de la app sin pasar por este motor. Mismo modelo de confianza que

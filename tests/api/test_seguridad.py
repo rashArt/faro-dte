@@ -1,5 +1,5 @@
 """
-Fugas de acceso (docs/deploy/PLAN.md, hallazgos #1 y #8). Ver la nota de `xfail` en test_emision.py.
+Fugas de acceso (docs/deploy/PLAN.md, hallazgos #1 y #8), corregidas en la fase 2.
 """
 from __future__ import annotations
 
@@ -13,14 +13,12 @@ def test_rutas_protegidas_exigen_token(cliente):
 
 
 @pytest.mark.hallazgo(1)
-@pytest.mark.xfail(strict=True, reason="#1: cualquiera en la red se registra sin token (fase 2)")
 def test_registro_sin_token_se_rechaza(cliente):
     r = cliente.post("/api/v1/auth/registro", json={"username": "intruso", "password": "clave-de-prueba-intruso"})
     assert r.status_code in (401, 403)
 
 
 @pytest.mark.hallazgo(8)
-@pytest.mark.xfail(strict=True, reason="#8: contexto-emision entrega la clave privada a cualquier JWT (fase 2)")
 def test_contexto_emision_no_entrega_clave_privada_a_un_jwt(cliente, admin):
     with open(FIXTURES / "cert_demo.p12", "rb") as f:
         r = cliente.post("/api/v1/keystore/certificados", headers=admin,

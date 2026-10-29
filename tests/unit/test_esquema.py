@@ -1,9 +1,9 @@
 """
 Migraciones (Alembic) contra el esquema heredado de upstream (docs/deploy/PLAN.md, fase 1).
 
-- En SQLite, `alembic upgrade head` desde cero da **el mismo** `sqlite_master` que el DDL que
+- En SQLite, `alembic upgrade 0001` desde cero da **el mismo** `sqlite_master` que el DDL que
   upstream corre al arrancar. Si upstream agrega una tabla o columna y nadie escribe su
-  migración, esta prueba falla (CONVENCIONES.md §3).
+  migración, esta prueba falla (CONVENCIONES.md §3). Desde `0002` son extensiones del fork.
 - Una base heredada (sin `alembic_version`) se adopta sin perder datos.
 - `downgrade` a la base y vuelta a `upgrade` funciona.
 - Con PostgreSQL (`FARO_TEST_DATABASE_URL`), su esquema tiene las mismas tablas, columnas,
@@ -23,6 +23,7 @@ from sqlalchemy import create_engine, inspect
 from core import datos, migrar
 
 IGNORADAS = {"alembic_version", "sqlite_sequence"}
+TABLAS_HEAD = 14   # las 13 heredadas + emisiones (0002)
 
 
 def _sqlite_master(ruta: Path) -> dict:
@@ -53,7 +54,7 @@ def test_migraciones_dan_el_mismo_esquema_que_el_ddl_heredado(carpeta):
     with datos.con_url(_url(heredada)):
         migrar.crear_esquema_heredado()
     with datos.con_url(_url(migrada)):
-        migrar.actualizar()
+        command.upgrade(migrar.configuracion(), migrar.REVISION_BASE)
     a, b = _sqlite_master(heredada), _sqlite_master(migrada)
     assert sorted(a) == sorted(b), f"solo heredado: {sorted(set(a) - set(b))}; solo migraciones: {sorted(set(b) - set(a))}"
     distintos = {k: (a[k], b[k]) for k in a if a[k] != b[k]}
@@ -82,7 +83,7 @@ def test_downgrade_a_la_base_y_upgrade_de_nuevo(carpeta):
         command.downgrade(cfg, "base")
         assert set(inspect(datos.motor()).get_table_names()) <= IGNORADAS
         command.upgrade(cfg, "head")
-        assert len(set(inspect(datos.motor()).get_table_names()) - IGNORADAS) == 13
+        assert len(set(inspect(datos.motor()).get_table_names()) - IGNORADAS) == TABLAS_HEAD
 
 
 def _cabeza() -> str:

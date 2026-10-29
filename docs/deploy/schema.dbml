@@ -1,5 +1,5 @@
 // Esquema de la base de Faro (motor Python), generado por tools/generar_dbml.py.
-// Migración: 0001. No editar a mano: regenerar tras cada migración.
+// Migración: 0002. No editar a mano: regenerar tras cada migración.
 // Tipos de SQLite; en PostgreSQL, INTEGER es BIGINT, REAL es DOUBLE PRECISION y BLOB es BYTEA.
 // Las relaciones (Ref) son lógicas: el esquema heredado no declara claves foráneas.
 
@@ -99,6 +99,8 @@ Table dtes {
   ambiente text [default: `'certificacion'`]
   creado_en text [not null]
   actualizado_en text [not null]
+  intento integer [not null, default: `0`]
+  motivo_error text
   indexes {
     (rut_emisor, tipo_dte, folio) [unique]
     (estado) [name: 'idx_dtes_estado']
@@ -106,7 +108,22 @@ Table dtes {
     (rut_emisor) [name: 'idx_dtes_rut_emisor']
     (tipo_dte, folio) [name: 'idx_dtes_tipo_folio']
   }
-  Note: 'Documentos emitidos: uno por folio (UNIQUE rut_emisor + tipo_dte + folio). Guarda el XML firmado.'
+  Note: 'Documentos emitidos: uno por folio (UNIQUE rut_emisor + tipo_dte + folio). Guarda el XML firmado. estado reservado/error = sin timbre (el folio se reusa); intento nombra la carpeta de archivos.'
+}
+
+Table emisiones {
+  id integer [pk, increment]
+  origen text [not null]
+  id_externo text [not null]
+  huella text [not null]
+  dte_id integer
+  creado_en text [not null]
+  actualizado_en text [not null]
+  indexes {
+    (origen, id_externo) [unique]
+    (dte_id) [name: 'ix_emisiones_dte_id']
+  }
+  Note: 'Ventas del producto (origen + id_externo): huella del JSON y el documento que las atiende. dte_id NULL si el folio de un intento fallido pasó a otra venta (fork, 0002).'
 }
 
 Table folios_gestion {
@@ -237,3 +254,4 @@ Ref: rcv_documentos.rut_empresa > negocios.rut // empresa
 Ref: claves_sii.rut_empresa > negocios.rut // empresa
 Ref: resolucion_cache.rut > negocios.rut // emisor
 Ref: audit_log.(rut_emisor, tipo_dte, folio) > dtes.(rut_emisor, tipo_dte, folio) // documento
+Ref: emisiones.dte_id > dtes.id // documento de la venta

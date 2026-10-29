@@ -40,7 +40,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 RUT_EMISOR = "77777777-7"
 RUT_RECEPTOR = "76111111-6"
 CLAVE_CERT = "demo"
-TABLAS_POR_PRUEBA = ("dtes", "cafs", "audit_log")
+TABLAS_POR_PRUEBA = ("emisiones", "dtes", "cafs", "audit_log")
 
 
 @pytest.fixture(autouse=True)

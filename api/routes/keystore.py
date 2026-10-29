@@ -16,7 +16,7 @@ from api.util import leer_upload
 from pydantic import BaseModel, Field
 
 from core import keystore, negocios
-from core.auth import requerir_autenticacion
+from core.auth import requerir_autenticacion, requerir_clave_app
 from core.errors import CertificadoError, RecursoNoEncontrado, SIIError, ValidacionError
 
 router = APIRouter(prefix="/api/v1/keystore", tags=["Certificados (Keystore)"])
@@ -213,7 +213,7 @@ async def olvidar_claves_sii(rut_empresa: str, usuario: dict = Depends(requerir_
 @router.get("/negocios/{negocio_id}/contexto-emision",
             summary="Lo que el núcleo (Go) necesita para emitir por este negocio: certificado en PEM, resolución, rutas")
 async def contexto_emision(
-    negocio_id: int, usuario: dict = Depends(requerir_autenticacion),
+    negocio_id: int, usuario: dict = Depends(requerir_clave_app),
 ) -> dict:
     """Entrega al cascarón de escritorio (app/) todo lo que el núcleo en Go necesita para
     emitir SIN sacar el certificado del keystore a disco: el par cert/clave en PEM (en

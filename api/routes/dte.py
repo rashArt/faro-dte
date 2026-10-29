@@ -16,16 +16,17 @@ from typing import Annotated, List, Optional
 from fastapi import APIRouter, Depends, File, Form, UploadFile
 from api.util import leer_upload
 from fastapi.responses import Response
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from core.auth import requerir_autenticacion
+from core.auth import requerir_autenticacion, solicitante
 from core.caf import ManejadorCAF
 from core.config import settings
 from core.crypto import CertificadoDigital
 from core.sobre import firmar_documento_standalone
 from core.dte import DTEInput, GeneradorDTE, TipoDTE, calcular_totales
 from core.errors import CAFError, CertificadoError, FolioError, SIIError, SIIRechazoError, ValidacionError
-from core.orchestrator import emitir_documento, ruta_desde_bd
+from core.orchestrator import ruta_desde_bd
+from core.servicios import emision
 from core.pdf_gen import generar_pdf_dte
 from core.preview import previsualizar_dte as _previsualizar_dte
 from core.sii import AmbienteSII, ClienteSII
@@ -360,7 +361,13 @@ async def generar_pdf_simple(body: DTEInput) -> Response:
 
 class EmitirDTERequest(BaseModel):
     dte: DTEInput
-    certificado_p12_b64: Optional[str] = None
+    id_externo: Optional[str] = Field(
+        None, min_length=1, max_length=100,
+        description="Identificador de la venta en tu producto (pedido, orden). Con el mismo "
+                    "`id_externo`, el mismo JSON devuelve el documento ya emitido en vez de gastar "
+                    "otro folio. Ver docs/deploy/PLAN.md, \"Política de folios\".")
+    certificado_p12_b64: Optional[str] = Field(
+        None, description="Solo por compatibilidad: sin él se usa el certificado del negocio (keystore).")
     password_certificado: Optional[str] = None
 
 
@@ -369,6 +376,9 @@ class EmitirDTEResponse(BaseModel):
     folio: int
     tipo_dte: int
     monto_total: int
+    estado: str = "generado"
+    id_externo: Optional[str] = None
+    repetido: bool = False
     xml_dte_path: str
     pdf_path: str
     xml_envio_path: str
@@ -406,15 +416,17 @@ async def emitir_dte_orquestado(
     body: EmitirDTERequest,
     usuario: dict = Depends(requerir_autenticacion),
 ) -> EmitirDTEResponse:
-    """Emite un DTE o boleta orquestado: folio → TED → firma → PDF → sobre → BD.
+    """Emite (timbra, firma y guarda) un DTE o boleta. **No lo envía al SII.**
 
-    Rutea según el tipo: 39/41 salen como EnvioBOLETA (PDF 80mm), el resto como EnvioDTE.
-    Los errores de dominio (sin folios, CAF, certificado) los levanta el orquestador y
-    los normaliza el handler global con el status correcto.
+    Prevalida sin gastar folio (422), reserva el folio y la venta (`id_externo`) en una
+    transacción y genera el documento (`core/servicios/emision.py`). 39/41 salen como
+    EnvioBOLETA (PDF 80mm), el resto como EnvioDTE. 409: la venta está en curso, ya tiene un
+    documento timbrado con otros datos, o el folio pedido ya se usó.
     """
     cert = None
     if body.certificado_p12_b64 and body.password_certificado:
         cert = _cargar_cert(_decode_b64(body.certificado_p12_b64, "El certificado"),
                             body.password_certificado)
-    resultado = emitir_documento(body.dte, certificado=cert)
+    resultado = emision.emitir(body.dte, solicitante(usuario), id_externo=body.id_externo,
+                               certificado=cert)
     return EmitirDTEResponse(**resultado)

@@ -56,7 +56,9 @@ def dte_demo(tipo, items, receptor=None, folio=0, emisor=None, **extra):
     return d
 
 
-IGNORAR_EMISION = {"dte_id", "folio", "xml_dte_path", "pdf_path", "xml_envio_path", "xml_envio_b64", "mensaje"}
+# `estado`, `id_externo` y `repetido` son del fork (servicio de emisión, docs/deploy/PLAN.md fase 2).
+IGNORAR_EMISION = {"dte_id", "folio", "xml_dte_path", "pdf_path", "xml_envio_path", "xml_envio_b64", "mensaje",
+                   "estado", "id_externo", "repetido"}
 
 
 def sobre(ruta, reemplazo=None) -> str:

@@ -63,7 +63,7 @@ Admin user created on first boot with a **random password** printed once to the 
 
 ## Architecture
 
-Request/CLI flow: **assign folio → build TED (stamp) → generate DTE XML → sign → package into EnvioDTE → send to SII → persist**. `core/orchestrator.py::OrquestadorDTE.emitir_dte` is the canonical implementation of this whole pipeline and the best single file to read first — the certification scripts reimplement the same steps inline.
+Request/CLI flow: **assign folio → build TED (stamp) → generate DTE XML → sign → package into EnvioDTE → send to SII → persist**. `core/orchestrator.py::OrquestadorDTE.emitir_dte` is the canonical implementation of this whole pipeline and the best single file to read first — the certification scripts reimplement the same steps inline. In the fork (`servidor-produccion`), `POST /api/v1/dte/emitir` goes through `core/servicios/emision.py` instead: it prevalidates without a folio, reserves `id_externo` + folio + `dtes` row in one transaction and reuses the orchestrators' steps (`_timbrar`, `generar_documento`, `generar_pdf`); see `docs/deploy/PLAN.md` phase 2.
 
 **El paso de firma+empaquetado es el más delicado de todo el motor y vive en `core/sobre.py`.**
 El SII verifica la firma del DTE extrayéndolo como documento independiente, así que el DTE se

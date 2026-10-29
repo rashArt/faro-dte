@@ -26,7 +26,7 @@ corrección se escribe ya dentro de él.
 | Archivos | XML y PDF en `storage/`, nombrados por tipo y folio, escritos **antes** del `INSERT` | Se sobrescriben cuando un folio se repite (#4). No hay abstracción para pasar a almacenamiento de objetos. |
 | Tareas de fondo | RVD y reposición de folios en hilos dentro de uvicorn | Atan la API a un solo proceso. Con dos réplicas se envían dos veces. |
 | Caché | Token del SII en memoria **por instancia de `ClienteSII`**, que las rutas crean en cada llamada; resolución del emisor en una tabla | Cada envío o consulta repite semilla → firma → token contra el SII (#13). |
-| Autenticación | JWT, API keys sin cuenta, clave efímera de la app y token del MCP | Registro abierto (#1). Las API keys no ven el keystore. |
+| Autenticación | JWT, API keys sin cuenta, clave efímera de la app y token del MCP | Registro abierto (#1, corregido en la fase 2). Las API keys no ven el keystore. |
 | Errores | `core/errors.py` + `api/errors.py`: códigos uniformes y `request-id` | Bien resuelto. Falta mapear `IntegrityError` (#7). |
 | Configuración | `pydantic-settings` (`core/config.py`) | Bien. Algunas lecturas directas de `os.environ` (`ADMIN_PASSWORD`, `MCP_AUTH_TOKEN`). |
 | Pruebas | 13 scripts `test_*.py` en la raíz, sin pytest; varios dependen del Mac del autor | No hay suite de API ni pruebas de transacción o concurrencia. |

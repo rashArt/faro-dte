@@ -38,8 +38,10 @@ def esquema(ruta: str) -> dict:
 
 def crear_python(ruta: str) -> None:
     env = {**os.environ, "DATABASE_URL": "sqlite:///" + ruta}
+    # Hasta la migración 0001: desde la 0002 son extensiones del fork (servidor) que Go y Rust no
+    # tienen (docs/deploy/CONVENCIONES.md §6).
     codigo = (
-        "import core.database as d; d.init_db()\n"
+        "from alembic import command; from core import migrar; command.upgrade(migrar.configuracion(), migrar.REVISION_BASE)\n"
         "from core import keystore, apikeys, negocios, rcv; keystore.init_keystore(); apikeys.init_api_keys(); negocios.init_negocios(); rcv.init_rcv_db()\n"
         "import core.resolucion, core.folios_auto\n"
         "from core import database\n"

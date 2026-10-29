@@ -10,11 +10,15 @@ from fastapi import APIRouter, Depends, status
 from pydantic import BaseModel, Field
 
 from core.errors import AutenticacionError, ConflictoError, ValidacionError
+from fastapi.security import HTTPAuthorizationCredentials
+
 from core.auth import (
     crear_access_token,
     hash_password,
     verify_password,
+    requerir_administrador,
     requerir_autenticacion,
+    security,
 )
 from core.models import (
     crear_usuario,
@@ -102,11 +106,17 @@ async def login(body: LoginRequest) -> LoginResponse:
     status_code=status.HTTP_201_CREATED,
     summary="Registrar nuevo usuario",
 )
-async def registro(body: RegistroRequest) -> RegistroResponse:
+async def registro(
+    body: RegistroRequest,
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
+) -> RegistroResponse:
     """
     Registra un nuevo usuario en el sistema.
-    Requiere autenticación si ya existe al menos un usuario (el primero es admin).
+    Si ya existe al menos un usuario (el primero es el administrador, lo crea el arranque),
+    solo el administrador puede registrar otros (hallazgo #1 de docs/deploy/PLAN.md).
     """
+    if listar_usuarios():
+        await requerir_administrador(credentials)
     # Sin filtrar por activo: un usuario desactivado conserva el username (UNIQUE) y antes
     # esto terminaba en un IntegrityError → 500. Mismo contrato que el motor Go: 409.
     from core.database import obtenerUno
@@ -159,9 +169,9 @@ async def listar_todos_usuarios(
 )
 async def eliminar_usuario(
     user_id: int,
-    usuario_actual: dict = Depends(requerir_autenticacion),
+    usuario_actual: dict = Depends(requerir_administrador),
 ) -> MensajeResponse:
-    """Desactiva un usuario. Requiere autenticación."""
+    """Desactiva un usuario. Solo el administrador (una API key no puede dejar sin acceso a nadie)."""
     if user_id == usuario_actual["id"]:
         raise ValidacionError("No puedes desactivar tu propio usuario")
 

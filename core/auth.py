@@ -123,8 +123,7 @@ async def requerir_autenticacion(
     # Clave efímera de la app de escritorio (APP_SHELL_KEY, solo por entorno): actúa como el
     # usuario dueño de la cuenta (el primero creado), así los recursos por cuenta (negocios,
     # certificados) son los suyos. Comparación en tiempo constante.
-    if credentials and settings.app_shell_key and len(settings.app_shell_key) >= 24 \
-            and secrets.compare_digest(credentials.credentials, settings.app_shell_key):
+    if _es_clave_app(credentials):
         dueno = _usuario_dueno()
         if dueno:
             actualizar_ultimo_acceso(dueno["id"])
@@ -141,6 +140,66 @@ async def requerir_autenticacion(
         detail="Se requiere un JWT o una API key válidos (Authorization: Bearer).",
         headers={"WWW-Authenticate": "Bearer"},
     )
+
+
+def es_administrador(usuario: Optional[dict]) -> bool:
+    """El administrador de la instancia es el usuario dueño (el primero creado, el que arma
+    `main.py` al arrancar). Una API key nunca lo es. Los roles llegan en la fase 4
+    (docs/deploy/PLAN.md); hasta entonces esta es la regla."""
+    if not usuario or usuario.get("tipo") == "apikey" or usuario.get("id") is None:
+        return False
+    dueno = _usuario_dueno()
+    return bool(dueno) and dueno["id"] == usuario["id"]
+
+
+def solicitante(usuario: dict):
+    """El `Solicitante` del servicio de emisión para el usuario autenticado. Una API key emite
+    con los negocios y certificados de la cuenta dueña (la instancia es de una empresa) y sus
+    `id_externo` son propios de esa key."""
+    from core.servicios.emision import Solicitante
+    if usuario.get("tipo") == "apikey":
+        dueno = _usuario_dueno()
+        return Solicitante(origen=f"apikey:{usuario['api_key_id']}",
+                           cuenta_id=dueno["id"] if dueno else None, es_admin=False)
+    return Solicitante(origen=f"usuario:{usuario['id']}", cuenta_id=usuario["id"],
+                       es_admin=es_administrador(usuario))
+
+
+async def requerir_administrador(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+) -> dict:
+    """Como `requerir_autenticacion`, pero solo el administrador (403 para el resto)."""
+    usuario = await requerir_autenticacion(credentials)
+    if not es_administrador(usuario):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                            detail="Esta acción es solo para el administrador de la instancia.")
+    return usuario
+
+
+def _es_clave_app(credentials: Optional[HTTPAuthorizationCredentials]) -> bool:
+    return bool(credentials and settings.app_shell_key and len(settings.app_shell_key) >= 24
+                and secrets.compare_digest(credentials.credentials, settings.app_shell_key))
+
+
+async def requerir_clave_app(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+) -> dict:
+    """Solo la clave efímera de la app de escritorio (`APP_SHELL_KEY`), que actúa como el dueño.
+
+    Para las rutas que entregan secretos en claro al cascarón local (clave privada del
+    certificado, claves del SII): ni un JWT ni una API key bastan (hallazgo #8). En un servidor
+    sin `APP_SHELL_KEY` responden siempre 401 o 403."""
+    if not credentials:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
+                            detail="Se requiere la clave de la app (Authorization: Bearer).",
+                            headers={"WWW-Authenticate": "Bearer"})
+    if not _es_clave_app(credentials):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                            detail="Esta ruta es solo para la app de escritorio.")
+    dueno = _usuario_dueno()
+    if not dueno:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="La instancia no tiene usuario dueño.")
+    return dueno
 
 
 async def requerir_usuario(

@@ -1,6 +1,6 @@
 # Plan del fork: Faro como API de facturación para productos
 
-> **Estado (2026-10-29):** fases 0 y 1 hechas; lo demás, pendiente salvo lo marcado ✅. Rama de
+> **Estado (2026-10-29):** fases 0, 1 y 2 hechas; lo demás, pendiente salvo lo marcado ✅. Rama de
 > trabajo: `servidor-produccion`. Los hallazgos están **verificados en vivo** contra la imagen
 > Docker del motor Python (`tools/sondeo_integridad.py`).
 >
@@ -33,21 +33,21 @@ SQLite → Postgres (las instancias del fork parten de cero).
 
 | # | Prueba | Resultado | Gravedad |
 |---|---|---|---|
-| 1 | `POST /api/v1/auth/registro` sin token | **201**: cualquiera en la red crea un usuario, inicia sesión, crea API keys (201) y lista todos los documentos (200) | crítica |
+| 1 | `POST /api/v1/auth/registro` sin token | **201**: cualquiera en la red crea un usuario, inicia sesión, crea API keys (201) y lista todos los documentos (200) | crítica · ✅ corregido (fase 2) |
 | 2 | 20 emisiones simultáneas con folio automático | **OK**: folios 1..20 únicos y consecutivos (`BEGIN IMMEDIATE`) | — |
-| 3 | Reintento de la misma petición | **Duplicado**: folios 21 y 22 para una sola venta. No hay idempotencia | crítica |
-| 4 | `folio` explícito ya usado | **500**. `folio_siguiente` **retrocede** de 23 a 2, **se sobrescribe el PDF** original y las emisiones automáticas siguientes también fallan pisando archivos (`core/models.py:282`; los archivos se escriben antes del `INSERT`) | crítica |
-| 5 | Factura con `GiroRecep` de 80 caracteres (el XSD admite 40) | **200**: firmada, guardada, folio gastado. Las facturas no se validan con XSD; las boletas sí | alta |
-| 6 | Error tras consumir el folio | Por código: el folio se confirma en su propia transacción y la fila al final. Un error entre medio lo deja gastado sin registro | alta |
-| 7 | `IntegrityError` | 500 y conexión HTTP cortada | media |
-| 8 | `contexto-emision` | entrega certificado y **clave privada en PEM** a cualquier JWT | alta |
+| 3 | Reintento de la misma petición | **Duplicado**: folios 21 y 22 para una sola venta. No hay idempotencia | crítica · ✅ corregido (fase 2) |
+| 4 | `folio` explícito ya usado | **500**. `folio_siguiente` **retrocede** de 23 a 2, **se sobrescribe el PDF** original y las emisiones automáticas siguientes también fallan pisando archivos (`core/models.py:282`; los archivos se escriben antes del `INSERT`) | crítica · ✅ corregido (fase 2) |
+| 5 | Factura con `GiroRecep` de 80 caracteres (el XSD admite 40) | **200**: firmada, guardada, folio gastado. Las facturas no se validan con XSD; las boletas sí | alta · ✅ corregido (fase 2) |
+| 6 | Error tras consumir el folio | Por código: el folio se confirma en su propia transacción y la fila al final. Un error entre medio lo deja gastado sin registro | alta · ✅ corregido (fase 2) |
+| 7 | `IntegrityError` | 500 y conexión HTTP cortada | media · ✅ corregido (fase 2) |
+| 8 | `contexto-emision` | entrega certificado y **clave privada en PEM** a cualquier JWT | alta · ✅ corregido (fase 2) |
 | 9 | Imagen construida desde Windows | `autocrlf` → corpus dorado 0/15; con LF, **15/15** | media · ✅ corregido (fase 0) |
 | 10 | N+1 | **No hay** en la API: listados paginados, ~5 consultas por emisión | — |
 | 11 | Dependencias sin fijar | `mcp` 2.x rompe `mcp_server.py` | media · ✅ corregido (fase 0) |
 | 12 | Event loop | `/health` de 19 ms a **1.533 ms** con 8 emisiones en paralelo: 72 rutas `async def` con trabajo bloqueante | alta |
 | 13 | Token del SII | se pide de nuevo en cada envío o consulta (un `ClienteSII` por petición) | media |
 | 14 | Veredicto del SII | ningún flujo guarda `aceptado`/`rechazado` en `dtes`; queda en `enviado` | media |
-| 15 | Notas 56/61 | `core/dte.py` no exige referencias; el SII sí | media |
+| 15 | Notas 56/61 | `core/dte.py` no exige referencias; el SII sí | media · ✅ corregido (fase 2) |
 | 16 | Envío de boletas | sin ruta en Python (el cliente REST existe y está verificado en producción) | alta |
 
 Gráfico del recorrido con estos puntos marcados: artifact "Recorrido del comprobante".
@@ -135,22 +135,43 @@ Detalle y verificación en [`POSTGRESQL.md`](POSTGRESQL.md); tablas en [`schema.
 - ✅ Sin regresiones: los scripts históricos pasan en la imagen y `tools/sondeo_integridad.py`
   da los mismos 8 hallazgos que antes del cambio.
 
-### Fase 2 — Emisión transaccional e idempotencia (lo más importante)
-- **Prevalidación antes de tocar un folio:** largos y obligatorios del XSD (por ejemplo,
-  `GiroRecep` ≤ 40), RUT, totales y referencias en 56/61 (#15). Se hace en el servicio, no en
-  `core/dte.py`, que no se toca. Lo que falle aquí responde 422 y no gasta folio (#5).
-- Servicio `EmitirDocumento`: reserva el `id_externo`, el folio y la fila `reservado` en **una**
-  transacción. Después firma, validación XSD completa (facturas y boletas; el dry-run de
-  certificación ya valida el EnvioDTE de facturas), archivos por `dte_id` sin sobrescribir y
-  estado `generado`. Si falla, la fila queda en `error` con el motivo, y el folio sigue siendo de
-  esa fila (#3, #6). Reglas de reintento y corrección en [Política de folios](#política-de-folios).
-- Folio explícito solo para el administrador, validado contra `folio_siguiente` (#4).
-- `IntegrityError` → 409 (#7).
-- El servicio toma el **certificado del negocio** (keystore). `certificado_p12_b64` en el cuerpo
-  queda solo por compatibilidad.
-- Se adelantan dos fugas críticas, de pocas líneas: `/auth/registro` exige administrador (#1) y
-  `contexto-emision` exige la clave de la app (#8).
-- Migración Alembic `0002`: tabla `emisiones` y estados nuevos de `dtes`.
+### Fase 2 — Emisión transaccional e idempotencia ✅ (2026-10-29)
+Regla decidida con el usuario: **timbrado = emitido** ([Política de folios](#política-de-folios)).
+`POST /api/v1/dte/emitir` usa el servicio `core/servicios/emision.py`; el MCP, la simulación y
+los scripts siguen con `core/orchestrator.py::emitir_documento`, sin cambios.
+- ✅ **Prevalidación sin folio** (#5, #15): RUT de emisor y receptor, referencias obligatorias en
+  56/61 y un **ensayo** completo (TED, firma, sobre y XSD con un folio de prueba, sin guardar
+  nada). El XSD juzga largos y obligatorios, así que no hay una tabla de límites a mano que
+  mantener. Falla → 422 sin gastar folio. `core/dte.py` no se tocó.
+- ✅ **Reserva en una transacción** (#3, #6): `id_externo`, folio y fila `reservado` de `dtes`, con
+  el candado del CAF (`models.bloquear_caf_activo`, el mismo de `consumir_siguiente_folio`, L7).
+  Antes de avanzar `folio_siguiente` se reusa el folio de una fila sin timbre (`error`, o
+  `reservado` de más de `EMISION_PLAZO_RESERVA_MIN`, 10 minutos).
+- ✅ **Generación** con el folio real: TED, firma, sobre, **XSD también en facturas**, PDF. Archivos
+  en `storage/emisiones/<dte_id>/v<intento>/`, abiertos en modo exclusivo: nunca se sobrescriben
+  (#4). Cierre a `generado` solo si la fila sigue en ese intento. Si algo falla, `error` con
+  `motivo_error`, y la respuesta trae `dte_id`, `folio` y `estado: error`.
+- ✅ Folio explícito solo para el administrador (403 para el resto), dentro del CAF y nunca hacia
+  atrás: 409 si ya se usó, y `folio_siguiente` no retrocede (#4).
+- ✅ `IntegrityError` → 409 `conflicto`, sin SQL en la respuesta (#7).
+- ✅ **Certificado del negocio** (keystore, `negocios.cert_id`): se descifra una vez por proceso y
+  otra vez si se reemplaza. `certificado_p12_b64` en el cuerpo sigue por compatibilidad; sin
+  ninguno de los dos, `CERTIFICADO_PATH` como siempre. Una API key usa la cuenta dueña.
+- ✅ **Fugas** (#1, #8): `/auth/registro` y `DELETE /auth/usuarios/{id}` solo para el administrador;
+  `contexto-emision` y `mipyme/contexto-siiengine` (entregan la clave privada y las claves del SII)
+  solo con la clave de la app (`APP_SHELL_KEY`).
+- ✅ Migración `0002`: tabla `emisiones` (`origen` + `id_externo` únicos, `huella`, `dte_id`) y
+  columnas `dtes.intento` y `dtes.motivo_error`. `tools/esquema_dorado.py` compara con Go hasta
+  `0001`; `test_esquema.py` exige el DDL heredado igual a `0001`.
+- ✅ El RVD y la consulta pública ignoran las filas sin timbre (`reservado`, `error`).
+- ✅ `core/orchestrator.py` y `core/orchestrator_boleta.py` exponen sus pasos (`_caf_activo`,
+  `_timbrar`, `generar_documento`, `generar_pdf`) para que el servicio no duplique la firma (L2);
+  sus bytes no cambiaron (`test_dorado` 15/15).
+- ✅ Verificación: suite pytest 29 + 1 omitida en SQLite y 30 en PostgreSQL 17 (los 7 `xfail` de la
+  fase 0 pasaron a pruebas normales, más `tests/api/test_politica_folios.py`); `test_dorado`
+  15/15 en local y en la imagen; `tools/sondeo_integridad.py` contra la imagen nueva: **0
+  hallazgos** (antes 8); la base PostgreSQL local con 11 documentos se actualizó de `0001` a
+  `0002` sin perder datos.
 
 ### Fase 3 — Política async, caché y adaptadores (etapa siguiente)
 - Rutas bloqueantes como `def` o con `run_in_threadpool` (#12). Prueba: `/health` estable bajo
@@ -166,7 +187,7 @@ Detalle y verificación en [`POSTGRESQL.md`](POSTGRESQL.md); tablas en [`schema.
 - `emitir` y `previsualizar` con emisor opcional (lo toma del negocio).
 - `POST /api/v1/dte/{dte_id}/enviar` (facturas por SOAP, boletas por REST: #16) y
   `GET /api/v1/dte/{dte_id}/estado`, que **guarda** el veredicto (#14).
-- Regenerar `http/api/`, escribir `http/flujos/02-cliente.http` y reescribir [`INTEGRACION.md`](INTEGRACION.md).
+- Regenerar `http/api/`, completar `http/flujos/02-cliente.http` (la fase 2 dejó la emisión; falta enviar y consultar) y reescribir [`INTEGRACION.md`](INTEGRACION.md).
 
 ### Fase 6 — Despliegue
 `docker-compose.example.yml` con Postgres (y Redis opcional), `alembic upgrade head` como paso
@@ -174,15 +195,20 @@ explícito, respaldo con `pg_dump` + volumen `storage/` + `.env`.
 
 ## Política de folios
 
-Un folio es el número legal del documento. Se gasta en tres momentos distintos, y cada uno tiene
-una respuesta distinta:
+Un folio es el número legal del documento. **Regla: timbrado = emitido** (decidido 2026-10-29).
+Timbrar es local: el motor firma el TED con la clave del CAF que el SII entregó por adelantado,
+sin hablar con el SII. Desde ese momento el PDF puede estar en manos del cliente (una boleta
+impresa), así que **un folio timbrado es de esa venta para siempre**: no se reasigna ni se
+regenera con otros datos. Enviar al SII y recibir su veredicto viene después (fase 5) y no
+cambia esto. Solo vuelve a usarse un folio que nunca llegó a timbrarse.
 
 | Dónde falla | Qué pasa con el folio | Qué hace el motor |
 |---|---|---|
-| **Antes de reservar** (datos inválidos) | no se toca | 422 con el detalle. Es donde deben caer casi todos los errores: la prevalidación de la fase 2 existe para eso |
-| **Después de reservar, antes de enviar al SII** (XSD, firma, disco, o el producto quiere cambiar algo) | el SII no lo conoce: el documento nunca salió | la fila (`error` o `generado`) es **dueña de su folio**. El producto vuelve a enviar el mismo JSON corregido con **el mismo `id_externo`**: se regenera con el mismo folio y los datos nuevos. No hay folio nuevo ni nada que anular |
-| **El SII lo rechaza** (`RCH`, `RFR`, `RCT`) | a verificar en certificación | se guarda `rechazado` con el motivo (#14). Si el SII admite reenviar con el mismo folio, la corrección con el mismo `id_externo` usa el mismo folio. Hasta confirmarlo, se trata como el caso siguiente |
-| **El SII lo aceptó** | es un documento legal | no se anula el folio: se corrige con nota de crédito o débito (61/56), que gasta un folio de ese tipo. Es el proceso legal, no un error del motor |
+| **Antes de reservar** (datos inválidos) | no se toca | 422 con el detalle. Es donde deben caer casi todos los errores: la prevalidación y el ensayo existen para eso |
+| **Después de reservar, antes de quedar timbrado** (disco, caída del proceso) | nadie tiene un papel con ese número | la fila queda `error` (o `reservado` huérfana). El mismo `id_externo` lo retoma con el mismo folio, con el JSON igual o corregido; si no vuelve, la venta siguiente del mismo tipo toma ese folio. No hay hueco ni nada que anular |
+| **Ya timbrado** (`generado`), esté o no enviado | puede estar entregado | el folio y sus datos quedan fijos. Un JSON distinto con el mismo `id_externo` responde 409 `ya_emitido` |
+| **El SII lo rechaza** (`RCH`, `RFR`, `RCT`) | el SII lo da por usado | se guarda `rechazado` con el motivo (#14). Según proveedores chilenos, reenviar ese folio da `DTE-3-101` y el portal no deja anularlo: se emite un documento nuevo, con folio nuevo y otro `id_externo`. **A verificar en certificación** |
+| **El SII lo aceptó** | es un documento legal | se corrige con nota de crédito o débito (61/56), que gasta un folio de ese tipo. Es el proceso legal, no un error del motor |
 
 ### El `id_externo`
 
@@ -202,24 +228,22 @@ Respuesta: `dte_id`, `folio`, `estado` y los enlaces al XML y al PDF. Con esa so
 
 | Llega el mismo `id_externo`… | Estado del documento | Respuesta |
 |---|---|---|
-| con el mismo JSON | cualquiera | 200 con el documento existente: mismo `dte_id` y folio. Es el reintento tras un timeout (#3) |
-| con el JSON **cambiado** | `error` o `generado` (no enviado) | **corrección**: se regenera con el mismo folio. El XML y el PDF anteriores se conservan como versión previa, no se sobrescriben |
-| con el JSON cambiado | `enviado`, `aceptado` | 409 con el `dte_id`: ya está en el SII y se corrige con nota de crédito |
-| mientras otra petición la procesa | `reservado` | 409 `en_curso`, sin esperar |
+| con el mismo JSON | timbrado (`generado` o posterior) | 200 con el documento existente: mismo `dte_id`, folio y sobre, `repetido: true`. Es el reintento tras un timeout (#3) |
+| con el mismo JSON o uno **corregido** | `error`, o `reservado` huérfana | se genera de nuevo con el mismo folio, en un intento nuevo (`v2`, `v3`…); los archivos anteriores no se tocan |
+| con el JSON cambiado | timbrado | 409 `ya_emitido` con `dte_id`, folio y estado: se corrige con nota de crédito o débito (o, si el SII lo rechazó, con un documento nuevo) |
+| mientras otra petición la procesa | `reservado` reciente | 409 `en_curso`, sin esperar |
 
-- El motor compara un hash del JSON para distinguir reintento de corrección.
-- Una fila `reservado` huérfana (el proceso cayó a mitad) pasa a `error` después de un plazo.
-- Si el producto ya entregó el PDF al cliente final (una boleta impresa), corregirlo es decisión
-  del producto: el motor lo permite mientras no se haya enviado al SII.
-- Sin `id_externo` (solo la ruta actual, para la UI y el administrador), cada petición es un
-  documento nuevo, como hoy.
+- La huella es un SHA-256 del JSON tal como llegó (sin `folio` ni valores por defecto).
+- El `id_externo` es propio de cada credencial (`origen`: el usuario o la API key).
+- Para revisar los datos **antes** de timbrar está `POST /api/v1/dte/previsualizar`, que no gasta
+  folio. Hoy timbra con el primer folio del CAF; la fase 5 le pone la marca "BORRADOR".
+- Sin `id_externo` (la UI, los `.http`, `tools/contrato_api.py`), cada petición es un documento
+  nuevo, como siempre.
 
-**Folios abandonados.** Una fila en `error` que el producto nunca corrige deja un hueco en la
-numeración. Para que eso no obligue a anular: la siguiente emisión del mismo tipo toma primero un
-folio de una fila en `error` vencida (nunca enviada, nunca entregada; con candado en la base) y
-solo si no hay ninguna avanza `folio_siguiente`. El folio no se libera si el XML o el PDF ya se
-entregaron al producto. Lo que aun así quede sin usar (CAF vencido, por ejemplo) aparece en un
-reporte "folios por anular", para anularlos en el portal del SII.
+**Folios sin timbre.** El folio de una fila en `error` (o `reservado` de más de 10 minutos) lo toma
+la siguiente emisión del mismo tipo antes de avanzar `folio_siguiente`, con el candado del CAF. Si
+el `id_externo` dueño vuelve después, toma un folio nuevo. Así no quedan huecos que anular. Lo que
+aun así quede sin usar (CAF vencido, por ejemplo) irá a un reporte "folios por anular" (fase 5).
 
 ## Riesgos
 

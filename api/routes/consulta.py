@@ -42,7 +42,8 @@ def _buscar(rut: str, tipo: int, folio: int, monto: int, fecha: str | None):
     """Fila de la boleta si coinciden TODOS los datos (anti-enumeración), o None."""
     if tipo not in _TIPOS:
         return None
-    sql = "SELECT * FROM dtes WHERE rut_emisor=? AND tipo_dte=? AND folio=? AND monto_total=?"
+    sql = ("SELECT * FROM dtes WHERE rut_emisor=? AND tipo_dte=? AND folio=? AND monto_total=? "
+           "AND COALESCE(estado, '') NOT IN ('reservado', 'error')")   # sin timbre: no hay documento que mostrar
     params: list = [_norm_rut(rut), tipo, folio, monto]
     if fecha:
         sql += " AND fecha_emision=?"

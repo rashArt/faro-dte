@@ -189,4 +189,4 @@ comprobados al levantar la imagen en limpio:
 | `ADMIN_PASSWORD` en el `.env` no llegaba al proceso (`main.py` la lee del entorno, y el compose solo montaba el archivo). | **Corregido**: `env_file: .env`. |
 | Si falta `./.env`, Docker crea un directorio en su lugar y el arranque falla. | Documentado: `cp .env.example .env` antes de levantar. |
 | PostgreSQL no estaba soportado (el `.env.example` decía que sí). | **Soportado** desde la fase 1, con migraciones de Alembic ([`POSTGRESQL.md`](POSTGRESQL.md)). |
-| En Python, `POST /api/v1/dte/emitir` y `/api/v1/estado/*` no leen el certificado del keystore: lo piden en el cuerpo o en `CERTIFICADO_PATH`. Go y Rust aceptan `cert_id`. | **Abierto**. Ver [`INTEGRACION.md`](INTEGRACION.md#el-certificado-al-emitir-brecha-abierta). |
+| En Python, `POST /api/v1/dte/emitir` y `/api/v1/estado/*` no leen el certificado del keystore: lo piden en el cuerpo o en `CERTIFICADO_PATH`. Go y Rust aceptan `cert_id`. | **`emitir` corregido** en la fase 2 (toma el certificado del negocio). `/estado/track` sigue pidiéndolo en el cuerpo: fase 5. |

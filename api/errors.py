@@ -26,6 +26,7 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
+from sqlalchemy.exc import IntegrityError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from core.errors import DTEChileError
@@ -91,6 +92,14 @@ def registrar_manejo_errores(app: FastAPI) -> None:
         logger.info("dominio [%s] %s [rid=%s]", exc.codigo, exc.mensaje, _request_id(request))
         return _json_error(exc.http_status, exc.codigo, exc.mensaje,
                            request=request, detalle=exc.detalle or None)
+
+    @app.exception_handler(IntegrityError)
+    async def _integridad(request: Request, exc: IntegrityError):
+        # Un UNIQUE de la base choca (hallazgo #7): es un conflicto con datos existentes, no un
+        # bug. El SQL y los valores no salen al cliente.
+        logger.info("integridad: %s [rid=%s]", exc.orig, _request_id(request))
+        return _json_error(409, "conflicto", "El registro ya existe o choca con otro.",
+                           request=request)
 
     @app.exception_handler(RequestValidationError)
     async def _validacion(request: Request, exc: RequestValidationError):

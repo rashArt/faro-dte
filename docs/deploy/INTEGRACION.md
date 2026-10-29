@@ -4,11 +4,13 @@ Cómo llama el backend de tu producto a una instancia de cliente (`http://faro-<
 red interna; ver [`README.md`](README.md)). Para el contrato exacto de cada endpoint usa Swagger
 en tu instancia local (`http://localhost:8000/docs`). Para los errores, [`../ERRORES-API.md`](../ERRORES-API.md).
 
-> **Estado (2026-10-15, motor Python):** describe la API **actual**. Sirve para aprender y probar
-> en local (los mismos llamados están en `http/api/*.http`). **No está lista para integrar
-> productos**: tiene fugas verificadas (registro abierto, duplicados al reintentar, folio
-> explícito que corrompe documentos) y obliga a enviar emisor y certificado. La API mínima que
-> las corrige son las fases 2, 4 y 5 de [`PLAN.md`](PLAN.md); este documento se reescribe al cerrarlas.
+> **Estado (2026-10-29, motor Python):** describe la API **actual**. Sirve para aprender y probar
+> en local (los mismos llamados están en `http/api/*.http` y `http/flujos/`). La fase 2 de
+> [`PLAN.md`](PLAN.md) cerró las fugas de integridad (registro abierto, duplicados al reintentar,
+> folio explícito que corrompía documentos, clave privada por `contexto-emision`) y toma el
+> certificado del keystore. **Todavía no está lista para integrar productos**: falta enviar y
+> consultar por documento, tokens por producto y emisor opcional (fases 4 y 5); este documento
+> se reescribe al cerrarlas.
 
 ## Autenticación
 
@@ -71,16 +73,21 @@ curl -s -X POST http://faro-acme:8000/api/v1/dte/emitir \
   las exige el SII (`core/simulacion.py`, `calcular_totales`). El motor calcula los totales.
 - **`emisor` es obligatorio hoy** aunque la instancia tenga un solo negocio con todos esos datos
   (tabla `negocios`). En la fase 5 pasa a ser opcional y lo completa el servidor.
-- **No reintentes `emitir` a ciegas:** no hay idempotencia y un reintento crea **otro**
-  documento con otro folio (hallazgo 3 de [`PLAN.md`](PLAN.md)). **No envíes `folio`
-  explícito:** un folio ya usado hace retroceder el correlativo y sobrescribe archivos
-  (hallazgo 4).
-- Respuesta: `dte_id`, `folio`, `monto_total`, `xml_envio_b64` (sobre firmado), rutas del XML y
-  del PDF, `ambiente`.
+- **Manda `id_externo`** (el identificador de la venta en tu producto) para reintentar sin
+  duplicar: el mismo JSON con el mismo `id_externo` devuelve el documento ya emitido
+  (`repetido: true`); un JSON distinto con un documento ya timbrado responde 409 `ya_emitido`.
+  Sin `id_externo`, cada petición es un documento nuevo. Reglas completas en
+  [`PLAN.md`](PLAN.md#política-de-folios) (timbrado = emitido).
+- **`folio` explícito:** solo el administrador, y nunca uno ya usado (409, el correlativo no
+  retrocede).
+- Respuesta: `dte_id`, `folio`, `estado` (`generado`), `id_externo`, `repetido`, `monto_total`,
+  `xml_envio_b64` (sobre firmado), rutas del XML y del PDF, `ambiente`. Los datos inválidos
+  responden 422 **sin gastar folio** (RUT, referencias de 56/61, esquema XSD).
 - **En Python `emitir` no envía al SII.** Genera, firma, timbra y guarda. El envío es otro
   paso (siguiente sección).
-- **Certificado:** Python lo toma del cuerpo (`certificado_p12_b64` + `password_certificado`)
-  o de `CERTIFICADO_PATH`. No lo toma del keystore (brecha 2).
+- **Certificado:** el del negocio del emisor en el keystore (`negocios.cert_id`). El del cuerpo
+  (`certificado_p12_b64` + `password_certificado`) sigue por compatibilidad, y sin ninguno de
+  los dos, `CERTIFICADO_PATH`.
 - **Prueba sin gastar folios:** `POST /api/v1/dte/previsualizar` (`dte` + `cert_id`) firma,
   timbra, valida XSD y devuelve el PDF sin consumir folio ni enviar.
 
@@ -138,17 +145,15 @@ Se mide con `tools/contrato_api.py`.
 1. **API keys con cuenta.** Una API key no tiene usuario dueño, así que no ve el keystore. Esto
    pasa en los tres motores. Propuesta: guardar `usuario_id` del creador en `api_keys` y
    resolver la cuenta por ahí. Mientras tanto, JWT.
-2. **`cert_id` en `POST /api/v1/dte/emitir`.** Go y Rust lo aceptan (`nucleo/servidor/emitir.go`,
-   `nucleo-rs/src/servidor/emitir.rs`). En Python son unas líneas en `api/routes/dte.py` con
-   `keystore.cargar_certificado`, como ya hace `/previsualizar`.
+2. ~~**`cert_id` en `POST /api/v1/dte/emitir`.**~~ Resuelto en la fase 2 de otra forma: Python
+   toma el certificado del negocio del emisor, sin `cert_id` en el cuerpo.
 3. **`POST /api/v1/dte/enviar-keystore`.** Envío de facturas con `cert_id`. Hay que portarlo de
    `nucleo/servidor/portalrutas.go`.
 4. **`POST /api/v1/boletas/enviar` y `/boletas/estado`.** Rutas sobre `core/sii_boleta.py`, con
    el contrato de Go/Rust.
-5. **`GET /keystore/negocios/{id}/contexto-emision` en un servidor.** Entrega el certificado y la
-   **clave privada en PEM** a cualquier JWT válido. Está pensado para la app de escritorio por
-   localhost. En un servidor, la red interna lo mitiga. Lo correcto es desactivarlo fuera de la
-   app (por ejemplo, exigir la clave efímera `APP_SHELL_KEY`).
+5. ~~**`GET /keystore/negocios/{id}/contexto-emision` en un servidor.**~~ Resuelto en la fase 2:
+   esa ruta y `mipyme/contexto-siiengine` exigen la clave efímera de la app (`APP_SHELL_KEY`);
+   un JWT o una API key reciben 403.
 
 El certificado en el cuerpo de cada petición o un `.pfx` montado con `CERTIFICADO_PATH`
 funcionan, pero obligan a tu producto o al servidor a manejar el `.pfx` y su clave. Úsalos

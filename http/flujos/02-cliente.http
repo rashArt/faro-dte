@@ -1,0 +1,147 @@
+# Flujo 2 — Emitir como un producto: certificado del negocio e id_externo (fase 2 de docs/deploy/PLAN.md).
+# Escrito a mano. Ejecuta los bloques en orden (Ctrl+Alt+R sobre cada uno).
+# Usa EMPRESA DEMO SPA (77777777-7) con el CAF y el certificado ficticios del corpus: firma y
+# timbra de verdad, pero nunca envía al SII. Corre solo contra una instancia local o de prueba.
+# La fase 5 agrega aquí el envío al SII y la consulta del veredicto.
+
+@clave = {{$dotenv FARO_CLAVE}}
+@clave_cert = {{$dotenv FARO_CLAVE_CERT}}
+# Cambia este valor para probar una venta nueva.
+@venta = pedido-demo-1
+
+### 1. Iniciar sesión (administrador)
+# @name login
+POST {{base}}/api/v1/auth/login
+Content-Type: application/json
+
+{"username": "{{usuario}}", "password": "{{clave}}"}
+
+###
+@token = {{login.response.body.access_token}}
+
+### 2. Cargar el CAF ficticio de facturas (si ya está cargado, responde que existe)
+POST {{base}}/api/v1/db/cafs
+Authorization: Bearer {{token}}
+Content-Type: multipart/form-data; boundary=FaroLimite
+
+--FaroLimite
+Content-Disposition: form-data; name="archivo"; filename="caf_33.xml"
+Content-Type: application/octet-stream
+
+< ../../tests/dorado/fixtures/caf_33.xml
+--FaroLimite--
+
+### 3. Subir el certificado ficticio una vez (queda cifrado en el keystore)
+# @name certificado
+POST {{base}}/api/v1/keystore/certificados
+Authorization: Bearer {{token}}
+Content-Type: multipart/form-data; boundary=FaroLimite
+
+--FaroLimite
+Content-Disposition: form-data; name="archivo"; filename="cert_demo.p12"
+Content-Type: application/octet-stream
+
+< ../../tests/dorado/fixtures/cert_demo.p12
+--FaroLimite
+Content-Disposition: form-data; name="password"
+
+{{clave_cert}}
+--FaroLimite--
+
+### 4. Ligar el certificado al negocio emisor (si ya existe, responde 409: sigue igual)
+POST {{base}}/api/v1/keystore/negocios
+Authorization: Bearer {{token}}
+Content-Type: application/x-www-form-urlencoded
+
+rut=77777777-7&cert_id={{certificado.response.body.id}}
+
+### 5. Emitir con id_externo y SIN certificado en el cuerpo → 200, estado "generado"
+# @name emitir
+POST {{base}}/api/v1/dte/emitir
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "id_externo": "{{venta}}",
+  "dte": {
+    "tipo_dte": 33,
+    "emisor": {"rut": "77777777-7", "razon_social": "EMPRESA DEMO SPA", "giro": "Cafeteria",
+               "codigo_actividad": 561000, "direccion": "Calle Ficticia 123",
+               "comuna": "Santiago", "ciudad": "Santiago"},
+    "receptor": {"rut": "76111111-6", "razon_social": "CLIENTE DEMO LTDA", "giro": "Comercio",
+                 "direccion": "Av Siempreviva 742", "comuna": "Santiago"},
+    "items": [{"numero_linea": 1, "nombre": "Servicio mensual", "cantidad": 1, "precio_unitario": 10000}]
+  }
+}
+
+### 6. Reintento: el MISMO JSON → 200 con el mismo dte_id y folio, "repetido": true
+POST {{base}}/api/v1/dte/emitir
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "id_externo": "{{venta}}",
+  "dte": {
+    "tipo_dte": 33,
+    "emisor": {"rut": "77777777-7", "razon_social": "EMPRESA DEMO SPA", "giro": "Cafeteria",
+               "codigo_actividad": 561000, "direccion": "Calle Ficticia 123",
+               "comuna": "Santiago", "ciudad": "Santiago"},
+    "receptor": {"rut": "76111111-6", "razon_social": "CLIENTE DEMO LTDA", "giro": "Comercio",
+                 "direccion": "Av Siempreviva 742", "comuna": "Santiago"},
+    "items": [{"numero_linea": 1, "nombre": "Servicio mensual", "cantidad": 1, "precio_unitario": 10000}]
+  }
+}
+
+### 7. Mismo id_externo con OTRO monto → 409 "ya_emitido" (timbrado = emitido: se corrige con NC)
+POST {{base}}/api/v1/dte/emitir
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "id_externo": "{{venta}}",
+  "dte": {
+    "tipo_dte": 33,
+    "emisor": {"rut": "77777777-7", "razon_social": "EMPRESA DEMO SPA", "giro": "Cafeteria",
+               "codigo_actividad": 561000, "direccion": "Calle Ficticia 123",
+               "comuna": "Santiago", "ciudad": "Santiago"},
+    "receptor": {"rut": "76111111-6", "razon_social": "CLIENTE DEMO LTDA", "giro": "Comercio",
+                 "direccion": "Av Siempreviva 742", "comuna": "Santiago"},
+    "items": [{"numero_linea": 1, "nombre": "Servicio mensual", "cantidad": 1, "precio_unitario": 12000}]
+  }
+}
+
+### 8. Giro del receptor de 80 caracteres (el SII admite 40) → 422 y NO gasta folio
+POST {{base}}/api/v1/dte/emitir
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "dte": {
+    "tipo_dte": 33,
+    "emisor": {"rut": "77777777-7", "razon_social": "EMPRESA DEMO SPA", "giro": "Cafeteria",
+               "codigo_actividad": 561000, "direccion": "Calle Ficticia 123",
+               "comuna": "Santiago", "ciudad": "Santiago"},
+    "receptor": {"rut": "76111111-6", "razon_social": "CLIENTE DEMO LTDA",
+                 "giro": "GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG",
+                 "direccion": "Av Siempreviva 742", "comuna": "Santiago"},
+    "items": [{"numero_linea": 1, "nombre": "Servicio mensual", "cantidad": 1, "precio_unitario": 10000}]
+  }
+}
+
+### 9. Folios restantes (el 422 anterior no consumió ninguno)
+GET {{base}}/api/v1/db/cafs
+Authorization: Bearer {{token}}
+
+### 10. El PDF del documento emitido (con su timbre)
+GET {{base}}/api/v1/dte/documentos/{{emitir.response.body.dte_id}}/pdf
+Authorization: Bearer {{token}}
+
+### 11. Registrar un usuario SIN token → 401 (antes: 201, hallazgo #1)
+POST {{base}}/api/v1/auth/registro
+Content-Type: application/json
+
+{"username": "intruso", "password": "clave-de-prueba-intruso"}
+
+### 12. La clave privada del certificado NO sale con un JWT → 403 (antes: 200, hallazgo #8)
+GET {{base}}/api/v1/keystore/negocios/1/contexto-emision
+Authorization: Bearer {{token}}

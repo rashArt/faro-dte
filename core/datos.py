@@ -45,7 +45,7 @@ _INSERT = re.compile(r"^\s*INSERT\s+INTO\s+([A-Za-z_][A-Za-z0-9_]*)", re.IGNOREC
 # Tablas con `id` autoincremental: en PostgreSQL su INSERT agrega `RETURNING id` para que
 # `cursor.lastrowid` siga funcionando. Las demás tienen clave natural.
 TABLAS_CON_ID = frozenset({"dtes", "cafs", "audit_log", "usuarios", "rvd_envios", "api_keys",
-                           "certificados", "claves_sii", "negocios", "rcv_documentos"})
+                           "certificados", "claves_sii", "negocios", "rcv_documentos", "emisiones"})
 
 _motor: Optional[Engine] = None
 _motor_url: Optional[str] = None

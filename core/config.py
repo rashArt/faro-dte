@@ -139,6 +139,9 @@ class Settings(BaseSettings):
     app_shell_key: Optional[str] = Field(default=None, description="Clave efímera de la app de escritorio (solo por entorno)")
     # Hora fija para salida reproducible byte a byte (corpus dorado). NUNCA en producción.
     reloj_fijo: Optional[str] = Field(default=None, description="Hora fija ISO para pruebas reproducibles (RELOJ_FIJO)")
+    # Emisión (docs/deploy/PLAN.md, "Política de folios"): una fila `reservado` más vieja que
+    # esto es de un proceso que cayó a mitad; su folio (sin timbre) vuelve a usarse.
+    emision_plazo_reserva_min: int = Field(default=10, description="Minutos tras los que una reserva de folio huérfana se reusa")
 
     # ---- Exposición pública acotada ----
     # Host público que SOLO puede ver el buscador de boletas (ej. "boletas.tu-dominio.cl").

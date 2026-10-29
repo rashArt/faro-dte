@@ -91,7 +91,8 @@ def boletas_del_dia(rut_emisor: str, dia: date, ambiente: Optional[str] = None) 
     sql = (
         "SELECT tipo_dte, folio, monto_neto, monto_exento, iva, monto_total, estado "
         "FROM dtes WHERE rut_emisor = ? AND fecha_emision = ? "
-        f"AND tipo_dte IN ({','.join('?' * len(TIPOS_CONSUMO))})"
+        f"AND tipo_dte IN ({','.join('?' * len(TIPOS_CONSUMO))}) "
+        "AND COALESCE(estado, '') NOT IN ('reservado', 'error')"   # sin timbre: no son boletas emitidas
     )
     params: list = [rut_emisor, dia.isoformat(), *TIPOS_CONSUMO]
     if ambiente:
@@ -109,7 +110,8 @@ def dias_con_boletas(rut_emisor: str, desde: date, hasta: date,
     sql = (
         "SELECT DISTINCT fecha_emision FROM dtes "
         "WHERE rut_emisor = ? AND fecha_emision BETWEEN ? AND ? "
-        f"AND tipo_dte IN ({','.join('?' * len(TIPOS_CONSUMO))})"
+        f"AND tipo_dte IN ({','.join('?' * len(TIPOS_CONSUMO))}) "
+        "AND COALESCE(estado, '') NOT IN ('reservado', 'error')"
     )
     params: list = [rut_emisor, desde.isoformat(), hasta.isoformat(), *TIPOS_CONSUMO]
     if ambiente:

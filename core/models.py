@@ -22,6 +22,11 @@ from core.database import ejecutar, obtener_todos, obtenerUno, get_db
 # DTEs - Documentos Tributarios Electrónicos
 # =============================================
 
+# Estados de `dtes` que no tienen un documento timbrado: la fila solo reserva el folio
+# (servicio de emisión, docs/deploy/PLAN.md "Política de folios"). No cuentan como emitidos
+# y su folio puede volver a usarse.
+ESTADOS_SIN_TIMBRE = ("reservado", "error")
+
 def crear_dte(
     tipo_dte: int,
     folio: int,
@@ -306,38 +311,43 @@ def consumir_siguiente_folio(rut_emisor: str, tipo_dte: int) -> Optional[int]:
     """
     max_retries = 3
     retry_delay = 0.05  # 50ms
-    # En PostgreSQL el candado es de la fila del CAF; en SQLite, BEGIN IMMEDIATE.
-    candado = " FOR UPDATE" if datos.es_postgres() else ""
 
     for attempt in range(max_retries):
         try:
             with datos.transaccion(inmediata=True) as conn:
-                cursor = conn.execute(
-                    "SELECT id, folio_siguiente, folio_desde, folio_hasta FROM cafs "
-                    "WHERE rut_emisor=? AND tipo_dte=? AND activo=1 "
-                    "ORDER BY folio_desde DESC LIMIT 1" + candado,
-                    (rut_emisor, tipo_dte),
-                )
-                row = cursor.fetchone()
-
-                if not row:
+                caf = bloquear_caf_activo(conn, rut_emisor, tipo_dte)
+                if not caf:
                     return None
-
-                folio = row["folio_siguiente"]
-
-                if folio > row["folio_hasta"]:
-                    return None
-
-                conn.execute(
-                    "UPDATE cafs SET folio_siguiente=? WHERE id=?",
-                    (folio + 1, row["id"]),
-                )
-                return folio
+                return avanzar_folio(conn, caf)
         except OperationalError as e:
             if "database is locked" in str(e) and attempt < max_retries - 1:
                 time.sleep(retry_delay)
                 continue
             raise
+
+
+def bloquear_caf_activo(conn, rut_emisor: str, tipo_dte: int):
+    """Fila del CAF activo **con candado**, dentro de una `datos.transaccion(inmediata=True)`.
+
+    En PostgreSQL el candado es `SELECT … FOR UPDATE` sobre la fila; en SQLite ya lo dio el
+    `BEGIN IMMEDIATE` de la transacción. Es el único lugar donde se toma (L7): lo usan
+    `consumir_siguiente_folio` y la reserva del servicio de emisión."""
+    candado = " FOR UPDATE" if datos.es_postgres() else ""
+    return conn.execute(
+        "SELECT id, folio_siguiente, folio_desde, folio_hasta, caf_xml FROM cafs "
+        "WHERE rut_emisor=? AND tipo_dte=? AND activo=1 "
+        "ORDER BY folio_desde DESC LIMIT 1" + candado,
+        (rut_emisor, tipo_dte),
+    ).fetchone()
+
+
+def avanzar_folio(conn, caf) -> Optional[int]:
+    """Consume `folio_siguiente` del CAF bloqueado por `bloquear_caf_activo`. None si se agotó."""
+    folio = caf["folio_siguiente"]
+    if folio > caf["folio_hasta"]:
+        return None
+    conn.execute("UPDATE cafs SET folio_siguiente=? WHERE id=?", (folio + 1, caf["id"]))
+    return folio
 
 
 # =============================================

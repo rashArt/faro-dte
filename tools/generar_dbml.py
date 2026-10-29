@@ -25,7 +25,8 @@ RAIZ = Path(__file__).resolve().parent.parent
 DESTINO = RAIZ / "docs" / "deploy" / "schema.dbml"
 
 NOTAS = {
-    "dtes": "Documentos emitidos: uno por folio (UNIQUE rut_emisor + tipo_dte + folio). Guarda el XML firmado.",
+    "dtes": "Documentos emitidos: uno por folio (UNIQUE rut_emisor + tipo_dte + folio). Guarda el XML firmado. "
+            "estado reservado/error = sin timbre (el folio se reusa); intento nombra la carpeta de archivos.",
     "cafs": "Rangos de folios autorizados por el SII. folio_siguiente es el contador atómico (L7).",
     "audit_log": "Bitácora de acciones (emisión, envío, CAF).",
     "usuarios": "Cuentas de acceso (JWT). cuenta_id en otras tablas apunta aquí.",
@@ -38,6 +39,8 @@ NOTAS = {
     "negocios": "Empresas emisoras de la cuenta y sus datos de carátula; cert_id es el certificado con que firman.",
     "rcv_documentos": "Registro de Compras y Ventas bajado del SII.",
     "resolucion_cache": "Resolución SII de cada emisor por ambiente (caché de la consulta pública).",
+    "emisiones": "Ventas del producto (origen + id_externo): huella del JSON y el documento que las atiende. "
+                 "dte_id NULL si el folio de un intento fallido pasó a otra venta (fork, 0002).",
 }
 
 # (desde, hacia, nota): relaciones lógicas, sin FOREIGN KEY en la base.
@@ -54,6 +57,7 @@ RELACIONES = [
     ("claves_sii.rut_empresa", "negocios.rut", "empresa"),
     ("resolucion_cache.rut", "negocios.rut", "emisor"),
     ("audit_log.(rut_emisor, tipo_dte, folio)", "dtes.(rut_emisor, tipo_dte, folio)", "documento"),
+    ("emisiones.dte_id", "dtes.id", "documento de la venta"),
 ]
 
 
