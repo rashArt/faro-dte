@@ -233,7 +233,7 @@ async def contexto_emision(
         "negocio_id": neg["id"], "rut": neg["rut"], "razon_social": neg.get("razon_social"),
         "ambiente": ambiente, "resolucion": {"fecha": fecha, "numero": numero},
         "cert_pem": cert_pem.decode("ascii"), "key_pem": key_pem.decode("ascii"),
-        "database_path": str(Path(DATABASE_PATH).resolve()),
+        "database_path": str(Path(DATABASE_PATH).resolve()) if DATABASE_PATH else None,  # solo SQLite
         "storage_path": str(Path(settings.storage_path).resolve()),
     }
 

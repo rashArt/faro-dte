@@ -8,12 +8,14 @@ Funciones de acceso a datos para DTEs, CAFs, logs y usuarios.
 from __future__ import annotations
 
 import json
-import sqlite3
 import time
 from datetime import datetime
 from typing import Optional
 
-from core.database import DATABASE_PATH, ejecutar, obtener_todos, obtenerUno, get_db
+from sqlalchemy.exc import OperationalError
+
+from core import datos
+from core.database import ejecutar, obtener_todos, obtenerUno, get_db
 
 
 # =============================================
@@ -302,51 +304,36 @@ def consumir_siguiente_folio(rut_emisor: str, tipo_dte: int) -> Optional[int]:
     Returns:
         El folio asignado, o None si no hay folios disponibles.
     """
-    db_path = str(DATABASE_PATH)
     max_retries = 3
     retry_delay = 0.05  # 50ms
+    # En PostgreSQL el candado es de la fila del CAF; en SQLite, BEGIN IMMEDIATE.
+    candado = " FOR UPDATE" if datos.es_postgres() else ""
 
     for attempt in range(max_retries):
         try:
-            conn = sqlite3.connect(db_path, isolation_level=None)
-            conn.row_factory = sqlite3.Row
-            conn.execute("PRAGMA journal_mode=WAL")
-            conn.execute("PRAGMA foreign_keys=ON")
-
-            try:
-                conn.execute("BEGIN IMMEDIATE")
-
+            with datos.transaccion(inmediata=True) as conn:
                 cursor = conn.execute(
                     "SELECT id, folio_siguiente, folio_desde, folio_hasta FROM cafs "
                     "WHERE rut_emisor=? AND tipo_dte=? AND activo=1 "
-                    "ORDER BY folio_desde DESC LIMIT 1",
+                    "ORDER BY folio_desde DESC LIMIT 1" + candado,
                     (rut_emisor, tipo_dte),
                 )
                 row = cursor.fetchone()
 
                 if not row:
-                    conn.commit()
                     return None
 
                 folio = row["folio_siguiente"]
 
                 if folio > row["folio_hasta"]:
-                    conn.commit()
                     return None
 
                 conn.execute(
                     "UPDATE cafs SET folio_siguiente=? WHERE id=?",
                     (folio + 1, row["id"]),
                 )
-
-                conn.commit()
                 return folio
-            except Exception:
-                conn.rollback()
-                raise
-            finally:
-                conn.close()
-        except sqlite3.OperationalError as e:
+        except OperationalError as e:
             if "database is locked" in str(e) and attempt < max_retries - 1:
                 time.sleep(retry_delay)
                 continue

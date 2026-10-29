@@ -8,11 +8,15 @@ hidden = (
     collect_submodules("uvicorn") + collect_submodules("passlib.handlers")
     + collect_submodules("api.routes") + collect_submodules("core")
     + ["pydantic_settings", "jose", "multipart", "signxml", "pdf417gen", "brotli", "zstandard", "pypdf"]
+    + collect_submodules("alembic") + collect_submodules("sqlalchemy.dialects.sqlite")
 )
 datas = [
     ("static", "static"),
     ("core/xsd", "core/xsd"),
-] + collect_data_files("signxml") + collect_data_files("reportlab", includes=["fonts/*"])
+    # Migraciones de Alembic: init_db() las corre al arrancar (core/migrar.py).
+    ("migraciones", "migraciones"),
+    ("alembic.ini", "."),
+] + collect_data_files("alembic") + collect_data_files("signxml") + collect_data_files("reportlab", includes=["fonts/*"])
 
 a = Analysis(
     ["motor_embebido.py"],

@@ -5,7 +5,8 @@ Antes de importar `core` (su `settings` se lee una sola vez al importar) deja el
 apuntando a una carpeta temporal: base SQLite propia, `storage/` propio, secretos de prueba
 y los programadores de fondo apagados. Nunca toca la base ni el `storage/` del repositorio.
 
-`FARO_TEST_DATABASE_URL` cambia la base de la suite (por ejemplo, a PostgreSQL desde la fase 1).
+`FARO_TEST_DATABASE_URL` cambia la base de la suite a PostgreSQL. Esa base se vacía entera al
+empezar, así que se exige además `FARO_TEST_PG_DESECHABLE=1` (nunca apuntes a una base con datos).
 
 Datos ficticios (L14): EMPRESA DEMO SPA 77777777-7, CAF y certificado de tests/dorado/fixtures.
 """
@@ -22,7 +23,7 @@ FIXTURES = RAIZ / "tests" / "dorado" / "fixtures"
 TMP = Path(tempfile.mkdtemp(prefix="faro-pytest-"))
 
 os.environ.update({
-    "DATABASE_URL": os.environ.get("FARO_TEST_DATABASE_URL", f"sqlite:///{(TMP / 'faro.db').as_posix()}"),
+    "DATABASE_URL": os.environ.get("FARO_TEST_DATABASE_URL") or f"sqlite:///{(TMP / 'faro.db').as_posix()}",
     "STORAGE_PATH": str(TMP / "storage"),
     "JWT_SECRET_KEY": "clave-de-prueba-jwt-" + "x" * 32,
     "DTE_MASTER_KEY": base64.urlsafe_b64encode(b"clave-de-prueba-fernet-32-bytes!").decode(),
@@ -58,6 +59,14 @@ def _sin_red(monkeypatch):
 def cliente():
     """La app completa con su arranque (`lifespan`): crea el esquema y el usuario admin.
     Los errores no manejados responden 500, como en producción, en vez de subir a la prueba."""
+    from core import datos
+    if datos.es_postgres():  # base desechable de pruebas: se vacía entera al empezar
+        if os.environ.get("FARO_TEST_PG_DESECHABLE") != "1":
+            pytest.exit("La suite vacía la base PostgreSQL de FARO_TEST_DATABASE_URL. Si es desechable, "
+                        "define FARO_TEST_PG_DESECHABLE=1.", returncode=2)
+        with datos.motor().begin() as con:
+            con.exec_driver_sql("DROP SCHEMA public CASCADE")
+            con.exec_driver_sql("CREATE SCHEMA public")
     import main
     with TestClient(main.app, raise_server_exceptions=False) as c:
         yield c

@@ -1,108 +1,82 @@
 # PostgreSQL y SQLite con SQLAlchemy Core + Alembic
 
-> **Estado (2026-10-15): no implementado.** Corresponde a la fase 1 de [`PLAN.md`](PLAN.md) (prioridad).
-> Hoy el motor Python usa `sqlite3` directamente (`core/database.py`), sin ORM ni migraciones.
-> Go y Rust (`nucleo/`, `nucleo-rs/`) siguen con SQLite: quedan en el roadmap.
+> **Estado (2026-10-29): implementado** (fase 1 de [`PLAN.md`](PLAN.md)). El motor Python corre
+> sobre SQLite o PostgreSQL según `DATABASE_URL`, y el esquema lo manejan las migraciones de
+> Alembic. Go y Rust (`nucleo/`, `nucleo-rs/`) siguen con SQLite: quedan en el roadmap.
+> Tablas y relaciones: [`schema.dbml`](schema.dbml). Reglas: [`CONVENCIONES.md`](CONVENCIONES.md).
 
-## Resultado esperado
+## Cómo se usa
 
-- **Mismo código para SQLite y Postgres**, elegido por `DATABASE_URL`:
-  - `sqlite:////app/storage/dte_database.db`: local, pruebas, instalaciones chicas.
-  - `postgresql+psycopg://faro:…@db:5432/faro`: producción, gestionable desde pgAdmin o DBeaver.
-- **Esquema versionado con Alembic** en los dos dialectos. `alembic upgrade head` crea o
-  actualiza la base, y `alembic current` dice en qué versión está.
-- **El flujo completo pasa en las dos bases**: alta (certificado, negocio, CAF), emisión
-  concurrente, idempotencia, envío simulado, consulta pública. Es la misma suite `tests/api/`
-  corrida dos veces.
-- **El contrato de la API no cambia** por esta fase. Fechas y montos siguen con el mismo formato.
-
-**Sin migración de datos.** El plan anterior traía un script para copiar una base SQLite
-existente a Postgres; servía para instalaciones que ya tienen datos. Las instancias de este
-fork parten de cero, así que pasa al roadmap.
-
-## Por qué SQLAlchemy Core y no el ORM
-
-| Opción | Qué implica aquí |
-|---|---|
-| `sqlite3` + `psycopg` a mano | dos caminos de código, pool propio y traducción de SQL propia. Es más frágil. |
-| **SQLAlchemy Core** | `Engine` con pool y dialecto, transacciones y `text()` con parámetros con nombre. El SQL escrito a mano se conserva casi igual, y `core/database.py` mantiene su firma, así que la mayoría de las ~110 llamadas no se tocan. |
-| SQLAlchemy ORM (modelos) | reescribir cada consulta y cada `dict(row)` del motor. Más riesgo sin beneficio para el objetivo. Se puede adoptar después, módulo por módulo, sobre el mismo `Engine` y las mismas migraciones. |
-
-Alembic usa ese mismo `Engine`. Sus migraciones se escriben con `op.create_table` y quedan
-portables entre dialectos.
-
-## Inventario medido (lo que cambia)
-
-| Construcción SQLite | Dónde | Cómo queda |
+| Base | `DATABASE_URL` | Para qué |
 |---|---|---|
-| Placeholders `?` | todas las consultas | La fachada los convierte a parámetros con nombre de `text()` (`:p0, :p1…`). No hay `%` literales en el SQL actual (verificado). |
-| `CREATE TABLE IF NOT EXISTS` en 7 módulos (`database`, `apikeys`, `folios_auto`, `keystore`, `negocios`, `rcv`, `resolucion`), 13 tablas | arranque | migración Alembic `0001_esquema_inicial`. Los `init_*` dejan de crear tablas. |
-| `ALTER TABLE` condicional con `PRAGMA table_info` | `core/negocios.py:54-57` | queda dentro de `0001`; los cambios futuros son migraciones nuevas |
-| `INTEGER PRIMARY KEY AUTOINCREMENT` (10 tablas) | DDL | `Integer, primary_key=True, autoincrement=True`: `SERIAL`/identity en Postgres |
-| `BLOB` | `keystore.py:52-53, 90-91` (secretos cifrados) | `LargeBinary` → `BYTEA` |
-| `REAL` | `valores` | `Float` |
-| `cursor.lastrowid` (8 lugares) | `apikeys.py:60`, `keystore.py:201`, `models.py:55,231,377,429`, `negocios.py:121`, `rvd.py:155` | `INSERT … RETURNING id` mediante `database.insertar()` |
-| `executescript` | `database.py`, `rcv.py:171` | lo reemplaza Alembic |
-| `PRAGMA journal_mode/foreign_keys` | `database.py`, `models.py:313` | en SQLite, un evento `connect` del `Engine`; en Postgres no aplica |
-| **`BEGIN IMMEDIATE`** (folio atómico, L7) | `models.py:294-355` | SQLite: `BEGIN IMMEDIATE`. Postgres: `SELECT … FOR UPDATE` sobre la fila del CAF. Una sola función con dos ramas, cubierta por la prueba de concurrencia. |
-| `datetime('now')` | `sii_mipyme.py:1393` | parámetro desde `core/reloj.py` (hoy guarda UTC; el resto del motor guarda hora de Chile) |
-| `sqlite3.Row` (acceso por nombre y por índice) | todas; por índice en `negocios.py:180`, `rvd.py:121` | `Row` de SQLAlchemy (`._mapping` por nombre, índice por posición) envuelto para que `dict(row)` siga funcionando |
-| `sqlite3.IntegrityError` / `OperationalError` | `models.py:349`, rutas | `sqlalchemy.exc.IntegrityError` → 409 (fase 1 del plan) |
-| `ON CONFLICT(…) DO UPDATE … excluded.` (5 lugares) | `folios_auto`, `keystore`, `rcv`, `resolucion`, `rvd` | misma sintaxis en ambos dialectos; los `UNIQUE` existen |
-| Afinidad de tipos de SQLite | a revisar | Postgres no compara `TEXT` con número. Lo detecta la suite en Postgres. |
-| `DATABASE_PATH` expuesto y `database_url` en el log | `keystore.py:225`, `mipyme.py:70`, `main.py:59` | con Postgres sería un DSN con contraseña: se enmascara y no se devuelve por la API |
+| SQLite | `sqlite:////app/storage/dte_database.db` | local, pruebas, instalaciones chicas |
+| PostgreSQL | `postgresql+psycopg://faro:<clave>@db:5432/faro` | producción, gestionable desde pgAdmin o DBeaver |
 
-`GROUP BY` (`api/routes/dte.py:154`) y `LIKE ?` (`valores.py:63`) ya son válidos en Postgres.
-
-## Pasos
-
-| Paso | Entrega | Verificación |
-|---|---|---|
-| 1.1 | `core/database.py` sobre `Engine` (SQLite), conversión de `?` a parámetros con nombre, `insertar()`, filas compatibles con `dict()` | `test_dorado` 15/15, `test_simulacion`, `test_mvp`, `tests/api/` sin cambios de resultado |
-| 1.2 | Alembic: `alembic.ini`, `migraciones/`, `0001_esquema_inicial` (13 tablas e índices); los `init_*` ya no crean tablas | base vacía + `alembic upgrade head` = mismo esquema que hoy, comparado tabla por tabla |
-| 1.3 | Dialecto Postgres: `psycopg[binary]` 3, folio con `FOR UPDATE`, `BYTEA`, `RETURNING` | `tests/api/` con `DATABASE_URL=postgresql+psycopg://…` |
-| 1.4 | Compose local con Postgres (abajo) | levantar, `alembic upgrade head`, correr `http/flujos/` y la suite contra la instancia |
-| 1.5 | Concurrencia | 50 hilos sobre el mismo CAF: folios únicos, consecutivos y sin huecos, en las dos bases |
-| 1.6 | CI | job con servicio `postgres:17` que corre la suite en ambos dialectos |
-
-`tools/esquema_dorado.py` compara el esquema de Python con el de Go. Con Alembic aparece la
-tabla `alembic_version`: el gate la ignora, igual que ya ignora `migraciones`.
-
-## Compose local con Postgres (paso 1.4)
-
-```yaml
-services:
-  faro:
-    # … igual que docker-compose.example.yml
-    environment:
-      - TZ=America/Santiago
-      - DATABASE_URL=postgresql+psycopg://faro:${POSTGRES_PASSWORD}@db:5432/faro
-    depends_on:
-      db: { condition: service_healthy }
-  db:
-    image: postgres:17
-    restart: unless-stopped
-    environment:
-      - POSTGRES_DB=faro
-      - POSTGRES_USER=faro
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-    volumes: [pg-data:/var/lib/postgresql/data]
-    ports: ["127.0.0.1:5432:5432"]          # solo local: para pgAdmin/DBeaver del equipo
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U faro -d faro"]
-      interval: 10s
-  pgadmin:                                   # opcional: docker compose --profile admin up -d
-    image: dpage/pgadmin4:8
-    profiles: [admin]
-    environment:
-      - PGADMIN_DEFAULT_EMAIL=admin@example.com
-      - PGADMIN_DEFAULT_PASSWORD=${PGADMIN_PASSWORD}
-    ports: ["127.0.0.1:5050:80"]
-volumes: { pg-data: {} }
+```bash
+alembic upgrade head        # crea o actualiza el esquema (también corre al arrancar el motor)
+alembic current             # en qué migración está la base
+alembic downgrade -1        # deshace la última (probado: base → head → base → head)
 ```
 
-En un servidor de cliente, la base no publica puerto. Se administra por un túnel SSH o desde
-un contenedor en la misma red.
+Una base creada antes de Alembic (por upstream o por este motor) no tiene `alembic_version`. Al
+arrancar se completa con el DDL de siempre y se marca en `0001`, sin tocar los datos
+(`core/migrar.py`). Desde ahí siguen las migraciones del fork.
+
+**Sin migración de datos SQLite → Postgres.** Las instancias del fork parten de cero; el script
+de copia queda en el roadmap.
+
+## Cómo está armado
+
+| Pieza | Qué hace |
+|---|---|
+| `core/datos.py` | `Engine` de SQLAlchemy. SQLite: sin pool (una conexión por uso, como `sqlite3.connect`), WAL y claves foráneas al conectar, y el manejo de transacciones del propio `sqlite3`. PostgreSQL: pool con `pre_ping`. `Conexion` y `Cursor` imitan `sqlite3` (`execute`, `executemany`, `executescript`, `fetchone`, `fetchall`, `rowcount`, `lastrowid`) y `Fila` imita `sqlite3.Row` (por nombre, por posición y `dict(fila)`) |
+| `core/database.py` | la misma fachada de siempre (`get_db`, `obtenerUno`, `obtener_todos`, `ejecutar`), ahora sobre `core/datos.py`. `init_db()` corre las migraciones |
+| `core/migrar.py` | `alembic upgrade head` y la adopción de bases heredadas |
+| `migraciones/`, `alembic.ini` | las migraciones. `0001_esquema_inicial`: en SQLite, el DDL heredado copiado literal; en PostgreSQL, las mismas tablas con tipos de Postgres |
+| `tools/generar_dbml.py` | escribe [`schema.dbml`](schema.dbml) reflejando una base migrada; CI exige que esté al día |
+
+### Lo que cambió respecto de `sqlite3` a mano
+
+| Construcción | Cómo queda |
+|---|---|
+| Placeholders `?` | SQLite los recibe tal cual (`exec_driver_sql`); en PostgreSQL se traducen a `%s` fuera de literales y `%` literal a `%%`. Las ~110 consultas no cambian |
+| `CREATE TABLE IF NOT EXISTS`, `ALTER TABLE` y `PRAGMA table_info` que los módulos corren al vuelo (7 módulos, 13 tablas) | `core/datos.py` los ignora: el esquema es de Alembic. `tests/unit/test_esquema.py` construye el esquema heredado y exige que sea **idéntico** (`sqlite_master`) al de las migraciones; si upstream agrega una tabla o columna sin su migración, la suite falla |
+| `INTEGER PRIMARY KEY AUTOINCREMENT` | Postgres: `BIGINT` con identidad |
+| `INTEGER` en general | Postgres: `BIGINT` (en SQLite un entero es de 64 bits; montos y TrackID no caben siempre en 32) |
+| `REAL`, `BLOB` | `DOUBLE PRECISION`, `BYTEA` |
+| `cursor.lastrowid` (8 lugares) | en PostgreSQL el `INSERT` a una tabla con `id` lleva `RETURNING id` automáticamente; el código no cambia |
+| `BEGIN IMMEDIATE` del folio (L7) | `datos.transaccion(inmediata=True)`: en SQLite `BEGIN IMMEDIATE`, en PostgreSQL `SELECT … FOR UPDATE` sobre la fila del CAF. Gate: 50 hilos sobre el mismo CAF dan folios 1..50 sin huecos ni repetidos, en las dos bases |
+| `datetime('now')` (`core/sii_mipyme.py`) | parámetro con `datetime.now().isoformat()`, como el resto de `dtes` |
+| `DATABASE_PATH` | sigue existiendo para SQLite (lo usan las rutas de la app de escritorio, que comparten el archivo con el motor Go); con PostgreSQL es `None` y esas rutas devuelven `database_path: null`. Si un script reasigna `DATABASE_PATH` a un archivo temporal (lo hacen varios scripts de upstream), la conexión lo sigue |
+| `database_url` en el log de arranque | sin contraseña (`datos.url_segura()`) |
+| `ON CONFLICT … DO UPDATE … excluded.`, `GROUP BY`, `LIKE ?`, `substr`, `BETWEEN` | iguales en las dos bases |
+
+## Verificación (2026-10-29)
+
+| Prueba | SQLite | PostgreSQL 17 |
+|---|---|---|
+| Suite pytest (`tests/unit`, `tests/api`) | 7 verdes, 1 omitida (la de Postgres), 7 `xfail` de la fase 2 | 8 verdes, 7 `xfail` |
+| Migraciones = DDL heredado (`sqlite_master` idéntico) | ✅ | — |
+| Misma estructura que SQLite (tablas, columnas, nulos, claves, únicos, índices) | — | ✅ |
+| `downgrade` a la base y `upgrade` de nuevo; adopción de una base heredada con datos | ✅ | — |
+| Folio atómico, 50 hilos | ✅ | ✅ |
+| Scripts históricos en la imagen (`test_dorado` 15/15, `test_simulacion`, `test_mvp`, `test_mipyme`, `test_robustez`, `test_claves_sii`, `test_rcv`) | ✅ | — |
+| `tools/sondeo_integridad.py` contra la imagen | mismos 8 hallazgos que antes del cambio; 20 emisiones simultáneas con folios 1..20 | — |
+| Compose con Postgres (`docker-compose.postgres.example.yml`): `alembic upgrade head` como paso explícito, 10 emisiones simultáneas por HTTP (folios 1..10), listado, PDF, API key, simulación | — | ✅ |
+
+```bash
+# La suite contra un Postgres desechable (se vacía entero al empezar):
+FARO_TEST_DATABASE_URL=postgresql+psycopg://faro:<clave>@127.0.0.1:5432/faro_pruebas \
+FARO_TEST_PG_DESECHABLE=1 .venv/bin/python -m pytest
+```
+
+## Compose local con PostgreSQL
+
+[`docker-compose.postgres.example.yml`](../../docker-compose.postgres.example.yml): Faro, `postgres:17`
+y pgAdmin opcional (`--profile admin`), todo publicado solo en `127.0.0.1`. Necesita
+`POSTGRES_PASSWORD` (y `PGADMIN_PASSWORD`) en el `.env`. En un servidor de cliente la base no
+publica puerto: se administra por un túnel SSH o desde un contenedor en la misma red. El
+despliegue por cliente con Postgres es la fase 6.
 
 ## Roadmap (fuera de este plan)
 
@@ -110,3 +84,4 @@ un contenedor en la misma red.
 - Script de migración de datos SQLite → Postgres.
 - Fechas como `timestamptz`/`date` (cambia el JSON de la API).
 - Réplicas: hace falta un candado de líder (`pg_advisory_lock`) para el RVD y la reposición de folios.
+- Claves foráneas reales: hoy las relaciones son lógicas ([`schema.dbml`](schema.dbml)).

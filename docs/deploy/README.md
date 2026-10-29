@@ -9,9 +9,10 @@ empresa cliente, con la API solo en la red interna y sin la interfaz gráfica a 
 | este `README.md` | decisiones, arquitectura, despliegue paso a paso, operación |
 | [`PLAN.md`](PLAN.md) | **el plan del fork**: hallazgos verificados, decisiones y fases (migraciones, transacción e idempotencia, Postgres, autenticación) |
 | [`CONVENCIONES.md`](CONVENCIONES.md) | reglas del fork: idioma (español en todo), base de datos, migraciones, API, código y cómo traer cambios de upstream |
-| [`ARQUITECTURA.md`](ARQUITECTURA.md) | lo que hay medido, el estándar objetivo y los tres caminos (recomendado: cascarón nuevo, mismo corazón SII) |
+| [`ARQUITECTURA.md`](ARQUITECTURA.md) | lo que hay medido, el estándar objetivo y los tres caminos (decidido: mejorar en el lugar) |
 | [`INTEGRACION.md`](INTEGRACION.md) | la API actual tal como es hoy (alta del cliente, emitir, estado, consulta pública) |
-| [`POSTGRESQL.md`](POSTGRESQL.md) | SQLite y PostgreSQL con SQLAlchemy Core + Alembic (hoy **no** está soportado) |
+| [`POSTGRESQL.md`](POSTGRESQL.md) | SQLite y PostgreSQL con SQLAlchemy Core + Alembic: cómo se usa, cómo está armado y su verificación |
+| [`schema.dbml`](schema.dbml) | tablas y relaciones (generado desde las migraciones; se ve en dbdiagram.io) |
 | [`../../http/`](../../http/README.md) | llamadas a la API para la extensión REST Client de VS Code |
 | [`cliente.env.example`](cliente.env.example) | `.env` de una instancia de cliente |
 | [`../../docker-compose.example.yml`](../../docker-compose.example.yml) | el compose base que se copia en cada despliegue |
@@ -28,7 +29,7 @@ empresa cliente, con la API solo en la red interna y sin la interfaz gráfica a 
 | Exposición | **API solo en la red de Docker**; nada público por defecto | `docs/PLATAFORMA.md` §5: no exponer la API REST a Internet. Tus productos la llaman por la red interna. |
 | Interfaz gráfica | **No se publica** | Las páginas (`/app`, `/docs`, `/onboarding`, `/apikeys`…) existen dentro del contenedor, pero sin puerto ni ruta de Traefik nadie de afuera llega a ellas. Para aprender, usa la instancia local. |
 | Buscador público | Lo sirve **tu producto** con `/consulta/api`; opcional por Traefik | Ver [`INTEGRACION.md`](INTEGRACION.md#consulta-pública-de-boletas). |
-| Base de datos | **PostgreSQL** en producción, SQLite en local y pruebas | Hoy solo funciona SQLite. La fase 1 de [`PLAN.md`](PLAN.md) agrega Postgres y migraciones sin perder SQLite. |
+| Base de datos | **PostgreSQL** en producción, SQLite en local y pruebas | Las dos funcionan desde la fase 1 de [`PLAN.md`](PLAN.md), con el esquema en migraciones de Alembic. El compose por cliente con Postgres es la fase 6; mientras tanto, [`docker-compose.postgres.example.yml`](../../docker-compose.postgres.example.yml). |
 | MCP | **Fuera** de este despliegue | `mcp_server.py` es un proceso aparte y no va en la imagen. |
 
 ## Arquitectura
@@ -128,7 +129,7 @@ docker compose -p faro-acme logs faro | grep -E "Ambiente SII|Base de datos|SEGU
 docker run --rm --network productos curlimages/curl -s http://faro-acme:8000/health
 ```
 
-`Base de datos` tiene que decir `sqlite:////app/storage/dte_database.db`. Con
+`Base de datos` tiene que decir `sqlite:////app/storage/dte_database.db` (o la URL de Postgres, sin la contraseña). Con
 `SII_AMBIENTE=produccion` el motor **no arranca** si queda algún aviso `SEGURIDAD`.
 
 **6. Alta del cliente y API key.** Sigue [`INTEGRACION.md`](INTEGRACION.md): certificado,
@@ -161,9 +162,10 @@ Nunca enrutes otro host hacia el contenedor: Traefik no agrega autenticación, y
 
   El SII exige conservar los documentos emitidos. Prueba la restauración, no solo la copia.
 - **Actualizar.** `git pull`, construir `faro-dte:<versión nueva>`, cambiar la etiqueta en el
-  compose del cliente y `docker compose -p faro-acme up -d`. El esquema se completa solo al
-  arrancar (`init_db`, `CREATE TABLE IF NOT EXISTS` y columnas nuevas en `core/negocios.py`).
-  Respalda antes.
+  compose del cliente y `docker compose -p faro-acme up -d`. Respalda antes. El esquema lo
+  actualizan las migraciones de Alembic: corre `docker compose -p faro-acme run --rm faro alembic upgrade head`
+  antes de levantar (el arranque también lo hace, pero así un error de migración no deja el
+  servicio a medio subir). `alembic current` dice en qué versión está la base.
 - **Rotar secretos.** Si solo cambias `DTE_MASTER_KEY` en el `.env`, los certificados
   guardados ya no se descifran. `rotar_claves.py` hace la rotación segura: vuelve a cifrar el
   keystore y escribe los secretos nuevos en el `.env`. También resetea la clave de `admin` y deja
@@ -186,5 +188,5 @@ comprobados al levantar la imagen en limpio:
 | La base quedaba en `/app/dte_database.db`, fuera del volumen: al recrear el contenedor se perdían usuarios, certificados, CAF, folios y documentos (en el log volvía a salir "USUARIO ADMIN CREADO"). | **Corregido**: `DATABASE_URL=sqlite:////app/storage/dte_database.db` en el compose. Comprobado: tras `--force-recreate`, el log dice "Usuarios registrados: 1". |
 | `ADMIN_PASSWORD` en el `.env` no llegaba al proceso (`main.py` la lee del entorno, y el compose solo montaba el archivo). | **Corregido**: `env_file: .env`. |
 | Si falta `./.env`, Docker crea un directorio en su lugar y el arranque falla. | Documentado: `cp .env.example .env` antes de levantar. |
-| PostgreSQL no está soportado (el `.env.example` decía que sí). | Corregido el comentario. Plan en [`POSTGRESQL.md`](POSTGRESQL.md). |
+| PostgreSQL no estaba soportado (el `.env.example` decía que sí). | **Soportado** desde la fase 1, con migraciones de Alembic ([`POSTGRESQL.md`](POSTGRESQL.md)). |
 | En Python, `POST /api/v1/dte/emitir` y `/api/v1/estado/*` no leen el certificado del keystore: lo piden en el cuerpo o en `CERTIFICADO_PATH`. Go y Rust aceptan `cert_id`. | **Abierto**. Ver [`INTEGRACION.md`](INTEGRACION.md#el-certificado-al-emitir-brecha-abierta). |

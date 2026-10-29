@@ -20,6 +20,12 @@ mcp>=1.2.0
 # Chile, no la del servidor) falla al arrancar allí.
 tzdata>=2024.1
 
+# Base de datos (fork, docs/deploy/POSTGRESQL.md): SQLAlchemy Core sobre SQLite o PostgreSQL,
+# esquema versionado con Alembic (migraciones/) y el driver psycopg 3 para PostgreSQL.
+sqlalchemy>=2.0
+alembic>=1.13
+psycopg[binary]>=3.2
+
 # Postulación a certificación de BOLETAS: el portal certBolElectDteInternet es una app GWT
 # (no scriptable por httpx). core/postulacion.py la maneja con playwright. Import perezoso:
 # el resto del motor NO lo necesita. Instalar solo si vas a postular boletas:

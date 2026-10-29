@@ -1,0 +1,84 @@
+# ============================================
+# Faro (motor Python) con PostgreSQL - Docker Compose de ejemplo
+# ============================================
+# Lo mismo que docker-compose.example.yml, con la base en PostgreSQL 17 y pgAdmin opcional.
+# Plantilla para probar en local (fase 1 de docs/deploy/PLAN.md); el despliegue por cliente
+# con Postgres queda en la fase 6.
+#
+#   cp .env.example .env            # y agrega POSTGRES_PASSWORD (y PGADMIN_PASSWORD si usas pgAdmin)
+#   cp docker-compose.postgres.example.yml docker-compose.yml
+#   docker compose up -d db
+#   docker compose run --rm faro alembic upgrade head      # esquema (también corre al arrancar)
+#   docker compose up -d faro
+#   docker compose --profile admin up -d pgadmin           # opcional: http://localhost:5050
+#
+# Todo queda publicado solo en 127.0.0.1. En un servidor de cliente, ni la base ni pgAdmin
+# publican puertos: se administran por un túnel SSH (docs/deploy/POSTGRESQL.md).
+
+services:
+  faro:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: faro-dte:local
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - TZ=America/Santiago
+      - DATABASE_URL=postgresql+psycopg://faro:${POSTGRES_PASSWORD:?define POSTGRES_PASSWORD en .env}@db:5432/faro
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - faro-data:/app/storage        # XML firmados y PDF (la base ya no vive aquí)
+      - faro-logs:/app/logs
+      - ./.env:/app/.env:ro
+    ports:
+      - "127.0.0.1:8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8000/health').raise_for_status()"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - faro
+
+  db:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=faro
+      - POSTGRES_USER=faro
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?define POSTGRES_PASSWORD en .env}
+      - TZ=America/Santiago
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"        # para pgAdmin/DBeaver del equipo; quítalo en un servidor
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U faro -d faro"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - faro
+
+  pgadmin:
+    image: dpage/pgadmin4:8
+    profiles: [admin]
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=admin@example.com
+      - PGADMIN_DEFAULT_PASSWORD=${PGADMIN_PASSWORD:?define PGADMIN_PASSWORD en .env}
+    ports:
+      - "127.0.0.1:5050:80"
+    networks:
+      - faro
+
+volumes:
+  faro-data:
+  faro-logs:
+  pg-data:
+
+networks:
+  faro:

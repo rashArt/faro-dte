@@ -3,7 +3,7 @@ tools/esquema_dorado.py — El esquema que crea Go (nucleo/almacen/migraciones) 
 que creaba Python (core/database.py + keystore + apikeys + negocios + rcv + resolución + folios).
 
 Crea dos bases vacías, una con cada motor, y compara `sqlite_master` tabla por tabla e índice
-por índice (SQL normalizado: espacios y comentarios fuera). Ignora `migraciones` y
+por índice (SQL normalizado: espacios y comentarios fuera). Ignora `migraciones`, `alembic_version` y
 `sqlite_sequence`. Sale 0 si son iguales.
 
 Uso:  .venv/bin/python tools/esquema_dorado.py [--go nucleo/bin/nucleo-servidor]
@@ -26,7 +26,7 @@ def esquema(ruta: str) -> dict:
     con = sqlite3.connect(ruta)
     out = {}
     for tipo, nombre, tabla, sql in con.execute("SELECT type, name, tbl_name, sql FROM sqlite_master WHERE sql IS NOT NULL"):
-        if nombre in ("migraciones", "sqlite_sequence") or nombre.startswith("sqlite_"):
+        if nombre in ("migraciones", "alembic_version", "sqlite_sequence") or nombre.startswith("sqlite_"):
             continue
         s = re.sub(r"--[^\n]*", "", sql)
         s = re.sub(r"\s+", " ", s).strip().rstrip(";")

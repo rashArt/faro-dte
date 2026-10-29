@@ -11,13 +11,29 @@ on:
 jobs:
   pytest:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        base: [sqlite, postgres]
+    services:
+      postgres:
+        image: postgres:17
+        env: { POSTGRES_DB: faro_pruebas, POSTGRES_USER: faro, POSTGRES_PASSWORD: clave-de-prueba-ci }
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U faro -d faro_pruebas" --health-interval 5s --health-timeout 5s --health-retries 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: "3.12", cache: pip }
       - run: pip install -r requirements-dev.txt -c constraints.txt
-      - name: Suite pytest (SQLite)
+      - name: Suite pytest (${{ matrix.base }})
+        env:
+          FARO_TEST_DATABASE_URL: ${{ matrix.base == 'postgres' && 'postgresql+psycopg://faro:clave-de-prueba-ci@localhost:5432/faro_pruebas' || '' }}
+          FARO_TEST_PG_DESECHABLE: "1"
         run: python -m pytest
+      - name: docs/deploy/schema.dbml al día con las migraciones
+        if: matrix.base == 'sqlite'
+        run: python tools/generar_dbml.py --comprobar
 
   imagen:
     runs-on: ubuntu-latest

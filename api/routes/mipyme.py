@@ -71,7 +71,7 @@ async def contexto_siiengine(rut_empresa: str, usuario: dict = Depends(requerir_
     guardadas = keystore.obtener_claves_sii(usuario["id"], rut_empresa)
     return {"rut_empresa": rut_empresa, "rut_usuario": guardadas["rut_usuario"],
             "clave_tributaria": guardadas["tributaria"], "clave_certificado": guardadas["certificado"],
-            "database_path": str(Path(DATABASE_PATH).resolve()),
+            "database_path": str(Path(DATABASE_PATH).resolve()) if DATABASE_PATH else None,  # solo SQLite
             "storage_path": str(Path(settings.storage_path).resolve())}
 
 

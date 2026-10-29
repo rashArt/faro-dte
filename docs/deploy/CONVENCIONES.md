@@ -53,7 +53,10 @@ Excepciones, siempre por nombre fijo de afuera y nunca por gusto:
 - **Una migración publicada no se edita.** Si algo quedó mal, se corrige con otra.
 - Sin datos reales (L14). Datos de referencia, solo si el motor no arranca sin ellos.
 - Cada cambio de esquema que llegue de upstream (hoy son `ALTER` condicionales en los `init_*`)
-  se traduce a una migración nueva.
+  se traduce a una migración nueva. `core/datos.py` ignora ese DDL al vuelo, y
+  `tests/unit/test_esquema.py` falla mientras la migración no exista.
+- Después de cada migración: `python tools/generar_dbml.py` (actualiza [`schema.dbml`](schema.dbml); CI lo exige).
+- En un despliegue, `alembic upgrade head` es un paso explícito antes de levantar el servicio.
 
 ## 4. API
 

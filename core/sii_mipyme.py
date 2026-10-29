@@ -1389,8 +1389,9 @@ def importar_emitidos(cli: ClienteMipyme, rut_emisor: str, docs: Sequence[Docume
         if con_xml and not (fila and fila.get("xml_firmado")):
             try:
                 xml = cli.obtener_envio_xml(d.dhdr, tipo, d.receptor_rut).decode("iso-8859-1", "replace")
+                from datetime import datetime
                 from core.database import ejecutar
-                ejecutar("UPDATE dtes SET xml_firmado=?, actualizado_en=datetime('now') WHERE id=?", (xml, dte_id))
+                ejecutar("UPDATE dtes SET xml_firmado=?, actualizado_en=? WHERE id=?", (xml, datetime.now().isoformat(), dte_id))
                 carpeta_xml = Path("storage") / "dtes" / "mipyme" / rut.replace("-", "")
                 carpeta_xml.mkdir(parents=True, exist_ok=True)
                 (carpeta_xml / f"T{tipo}_F{d.folio}_D{d.dhdr}.xml").write_bytes(xml.encode("iso-8859-1", "replace"))

@@ -23,6 +23,7 @@ from fastapi.staticfiles import StaticFiles
 
 from core.config import settings
 from core.database import init_db
+from core.datos import url_segura
 from core.folios_auto import programador_folios
 from core.scheduler import programador
 from core.models import obtener_usuario_por_username, crear_usuario, listar_usuarios
@@ -56,7 +57,7 @@ async def lifespan(app: FastAPI):
 
     logger.info(f"Iniciando {settings.app_name} v{settings.app_version}")
     logger.info(f"Ambiente SII: {settings.sii_ambiente}")
-    logger.info(f"Base de datos: {settings.database_url}")
+    logger.info(f"Base de datos: {url_segura()}")
 
     # ---- Chequeo de seguridad: avisar siempre; en producción, abortar ----
     problemas = settings.problemas_seguridad()

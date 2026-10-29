@@ -1,6 +1,6 @@
 # Plan del fork: Faro como API de facturación para productos
 
-> **Estado (2026-10-15):** plan aprobado; nada implementado salvo lo marcado ✅. Rama de
+> **Estado (2026-10-29):** fases 0 y 1 hechas; lo demás, pendiente salvo lo marcado ✅. Rama de
 > trabajo: `servidor-produccion`. Los hallazgos están **verificados en vivo** contra la imagen
 > Docker del motor Python (`tools/sondeo_integridad.py`).
 >
@@ -100,34 +100,40 @@ que la fase 2 adelanta.
 - ✅ CI propio (`.github/workflows/servidor.yml`): suite pytest, imagen, corpus dorado dentro de
   la imagen y `/health`.
 
-### Fase 1 — Datos y migraciones (prioridad)
-Ver [`POSTGRESQL.md`](POSTGRESQL.md).
-- **Primero, la prueba de concurrencia** (50 hilos sobre el mismo CAF, paso 1.5 de
-  [`POSTGRESQL.md`](POSTGRESQL.md)) en verde sobre el código actual. Es el gate de todo lo que sigue:
-  bajo SQLAlchemy, el driver de SQLite no emite `BEGIN` por su cuenta, y sin un evento que emita
-  `BEGIN IMMEDIATE` el folio deja de ser atómico (L7) **sin dar ningún error**.
-- `Engine` de SQLAlchemy detrás de `core/database.py`, sin cambio de comportamiento. Unos 50
-  lugares usan `get_db()`/`get_connection()` como una `sqlite3.Connection` (`execute`, `cursor`,
-  `rowcount`, `fetchone`, `executemany`): la fachada entrega un objeto con esa misma forma. Los 8
-  `lastrowid` pasan a `insertar()` con `RETURNING`. `core/models.py:311` abre su propia conexión
-  con `isolation_level=None`; pasa por la fachada.
-- `DATABASE_PATH` (`core/database.py:18`) se calcula reemplazando texto en la URL y queda
-  inválido con Postgres; lo usan `keystore` y `mipyme`. Se reemplaza por una función que solo
-  aplica a SQLite y por la URL enmascarada.
-- Alembic `0001_esquema_inicial` (13 tablas) para ambos dialectos; los `init_*` dejan de crear
-  tablas e `init_db()` ejecuta `alembic upgrade head`, así que `setup.py`, los scripts y
-  `uvicorn` siguen arrancando solos. **Base existente** (la local de hoy o una de upstream): si ya
-  tiene las tablas y no tiene `alembic_version`, se marca con `stamp 0001` en vez de crearlas.
+### Fase 1 — Datos y migraciones ✅ (2026-10-29)
+Detalle y verificación en [`POSTGRESQL.md`](POSTGRESQL.md); tablas en [`schema.dbml`](schema.dbml).
+- ✅ **Gate de concurrencia primero**: `tests/unit/test_folios.py` (50 hilos sobre el mismo CAF,
+  folios 1..50 sin huecos) en verde antes y después del cambio, en SQLite y en PostgreSQL.
+  `datos.transaccion(inmediata=True)`: `BEGIN IMMEDIATE` en SQLite y `SELECT … FOR UPDATE` en
+  PostgreSQL. Para no cambiar el comportamiento, SQLite conserva el manejo de transacciones de
+  `sqlite3` y no usa pool.
+- ✅ `core/datos.py`: `Engine` de SQLAlchemy y una conexión con la forma de `sqlite3`
+  (`execute`, `fetchone`, `rowcount`, `lastrowid`, `executemany`, `executescript`, filas como
+  `sqlite3.Row`), así que las consultas existentes no cambiaron. Los 8 `lastrowid` funcionan en
+  PostgreSQL con `RETURNING id` automático, sin tocar sus archivos. `core/models.py` ya no abre
+  su propia conexión `sqlite3`.
+- ✅ `DATABASE_PATH` solo existe con SQLite (las dos rutas de la app de escritorio devuelven
+  `null` con PostgreSQL); el log de arranque muestra la URL sin contraseña. Si un script
+  reasigna `DATABASE_PATH` (varios scripts de upstream lo hacen), la conexión lo sigue.
+- ✅ Alembic: `alembic.ini`, `migraciones/` y `0001_esquema_inicial` (13 tablas). En SQLite es el
+  DDL heredado copiado literal, así que el esquema queda idéntico al de siempre y al de Go; en
+  PostgreSQL, las mismas tablas con `BIGINT`, `DOUBLE PRECISION` y `BYTEA`. `init_db()` corre
+  `alembic upgrade head`; `setup.py`, los scripts y `uvicorn` arrancan solos. Una base heredada
+  (sin `alembic_version`) se completa con el DDL de siempre y se marca `0001`, sin perder datos.
   `downgrade` probado.
-- `tools/esquema_dorado.py` llama a `init_db()` y compara `sqlite_master` con Go: sigue sirviendo
-  si ignora `alembic_version`.
-- **Cambios de esquema de upstream:** hoy llegan como `ALTER` condicionales dentro de los `init_*`.
-  Al traerlos, cada uno se traduce a una migración nueva; si no, la columna falta en silencio.
-  Va como paso fijo de la guía para traer cambios de upstream.
-- Postgres (psycopg 3), folio con `SELECT … FOR UPDATE`, compose local con Postgres y pgAdmin
-  opcional. `LIKE` distingue mayúsculas en Postgres: la búsqueda de `valores` usa `ILIKE` o
-  `lower()` para no cambiar el resultado.
-- Prueba de **actualización**: base en la versión N con datos → `upgrade` → la suite pasa.
+- ✅ El DDL heredado que los módulos corren al vuelo se ignora (el esquema es de Alembic), y
+  `tests/unit/test_esquema.py` exige que ese DDL y las migraciones den el **mismo**
+  `sqlite_master`: un cambio de esquema traído de upstream sin su migración rompe la suite.
+- ✅ `tools/esquema_dorado.py` ignora `alembic_version`.
+- ✅ PostgreSQL con psycopg 3. `tests/unit/test_esquema.py` compara la estructura de Postgres con
+  la de SQLite (tablas, columnas, nulos, claves, únicos, índices). `datetime('now')` de
+  `core/sii_mipyme.py` pasó a parámetro. `LIKE` no requirió cambios: solo compara fechas.
+- ✅ `docker-compose.postgres.example.yml` (Postgres 17 y pgAdmin opcional) con
+  `alembic upgrade head` como paso explícito; 10 emisiones simultáneas por HTTP dieron folios 1..10.
+- ✅ `tools/generar_dbml.py` escribe [`schema.dbml`](schema.dbml) desde una base migrada; CI exige
+  que esté al día. CI corre la suite en SQLite y en PostgreSQL.
+- ✅ Sin regresiones: los scripts históricos pasan en la imagen y `tools/sondeo_integridad.py`
+  da los mismos 8 hallazgos que antes del cambio.
 
 ### Fase 2 — Emisión transaccional e idempotencia (lo más importante)
 - **Prevalidación antes de tocar un folio:** largos y obligatorios del XSD (por ejemplo,

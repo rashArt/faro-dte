@@ -1,0 +1,239 @@
+// Esquema de la base de Faro (motor Python), generado por tools/generar_dbml.py.
+// Migración: 0001. No editar a mano: regenerar tras cada migración.
+// Tipos de SQLite; en PostgreSQL, INTEGER es BIGINT, REAL es DOUBLE PRECISION y BLOB es BYTEA.
+// Las relaciones (Ref) son lógicas: el esquema heredado no declara claves foráneas.
+
+Project faro { database_type: "SQLite / PostgreSQL" }
+
+Table api_keys {
+  id integer [pk, increment]
+  nombre text [not null]
+  prefijo text [not null]
+  key_hash text [not null, unique]
+  activo integer [not null, default: `1`]
+  creado text [not null]
+  ultimo_uso text
+  Note: 'Claves de API (hoy sin cuenta asociada; la fase 4 las liga al administrador).'
+}
+
+Table audit_log {
+  id integer [pk, increment]
+  accion text [not null]
+  tipo_dte integer
+  folio integer
+  rut_emisor text
+  detalle text
+  ip_origen text
+  creado_en text [not null]
+  indexes {
+    (accion) [name: 'idx_audit_accion']
+    (creado_en) [name: 'idx_audit_fecha']
+  }
+  Note: 'Bitácora de acciones (emisión, envío, CAF).'
+}
+
+Table cafs {
+  id integer [pk, increment]
+  tipo_dte integer [not null]
+  rut_emisor text [not null]
+  folio_desde integer [not null]
+  folio_hasta integer [not null]
+  folio_siguiente integer [not null]
+  fecha_autorizacion text [not null]
+  caf_xml text [not null]
+  activo integer [default: `1`]
+  creado_en text [not null]
+  indexes {
+    (rut_emisor, tipo_dte, folio_desde, folio_hasta) [unique]
+    (rut_emisor, tipo_dte) [name: 'idx_cafs_rut_tipo']
+  }
+  Note: 'Rangos de folios autorizados por el SII. folio_siguiente es el contador atómico (L7).'
+}
+
+Table certificados {
+  id integer [pk, increment]
+  cuenta_id integer [not null]
+  rut text [not null]
+  nombre text
+  alias text
+  vencimiento text
+  p12_cifrado blob [not null]
+  clave_cifrada blob [not null]
+  creado text [not null]
+  indexes {
+    (cuenta_id, rut) [unique]
+  }
+  Note: 'Certificados .p12 y su contraseña, cifrados con Fernet (L6).'
+}
+
+Table claves_sii {
+  id integer [pk, increment]
+  cuenta_id integer [not null]
+  rut_empresa text [not null]
+  rut_usuario text
+  tributaria_cifrada blob
+  certificado_cifrada blob
+  actualizado text [not null]
+  indexes {
+    (cuenta_id, rut_empresa) [unique]
+  }
+  Note: 'Claves del portal del SII de cada empresa, cifradas.'
+}
+
+Table dtes {
+  id integer [pk, increment]
+  tipo_dte integer [not null]
+  folio integer [not null]
+  rut_emisor text [not null]
+  rut_receptor text [not null]
+  razon_social_receptor text
+  fecha_emision text [not null]
+  monto_neto integer [default: `0`]
+  monto_exento integer [default: `0`]
+  iva integer [default: `0`]
+  monto_total integer [not null]
+  estado text [default: `'generado'`]
+  track_id integer
+  xml_firmado text
+  pdf_path text
+  ambiente text [default: `'certificacion'`]
+  creado_en text [not null]
+  actualizado_en text [not null]
+  indexes {
+    (rut_emisor, tipo_dte, folio) [unique]
+    (estado) [name: 'idx_dtes_estado']
+    (fecha_emision) [name: 'idx_dtes_fecha']
+    (rut_emisor) [name: 'idx_dtes_rut_emisor']
+    (tipo_dte, folio) [name: 'idx_dtes_tipo_folio']
+  }
+  Note: 'Documentos emitidos: uno por folio (UNIQUE rut_emisor + tipo_dte + folio). Guarda el XML firmado.'
+}
+
+Table folios_gestion {
+  clave text [pk]
+  ultima_accion text
+  ultimo_ts text
+  detalle text
+  Note: 'Estado de la reposición automática de folios por clave (rut y tipo).'
+}
+
+Table negocios {
+  id integer [pk, increment]
+  cuenta_id integer [not null]
+  rut text [not null]
+  razon_social text
+  cert_id integer
+  ambiente text [default: `'certificacion'`]
+  creado text [not null]
+  estado text
+  estado_etiqueta text
+  usa_sw_propio integer
+  estado_ts text
+  software_registrado text
+  giro text
+  codigo_actividad integer
+  direccion text
+  comuna text
+  ciudad text
+  email text
+  telefono text
+  indexes {
+    (cuenta_id, rut) [unique]
+  }
+  Note: 'Empresas emisoras de la cuenta y sus datos de carátula; cert_id es el certificado con que firman.'
+}
+
+Table rcv_documentos {
+  id integer [pk, increment]
+  rut_empresa text [not null]
+  tipo_operacion text [not null]
+  periodo text [not null]
+  tipo_dte integer [not null]
+  folio integer [not null]
+  fecha_doc text
+  rut_contraparte text [default: `''`]
+  razon_social text [default: `''`]
+  monto_exento integer [default: `0`]
+  monto_neto integer [default: `0`]
+  monto_iva integer [default: `0`]
+  monto_iva_no_rec integer [default: `0`]
+  monto_iva_uso_comun integer [default: `0`]
+  monto_total integer [default: `0`]
+  estado_sii text [default: `'REGISTRO'`]
+  clasificacion text
+  origen text [default: `'rcv'`]
+  creado_en text [not null]
+  actualizado_en text [not null]
+  indexes {
+    (rut_empresa, tipo_operacion, tipo_dte, folio, rut_contraparte) [unique]
+    (rut_empresa, periodo) [name: 'idx_rcv_empresa_periodo']
+    (tipo_operacion) [name: 'idx_rcv_operacion']
+  }
+  Note: 'Registro de Compras y Ventas bajado del SII.'
+}
+
+Table resolucion_cache {
+  rut text [pk]
+  ambiente text [pk]
+  fecha_iso text [not null]
+  numero integer [not null]
+  ts text [not null]
+  indexes {
+    (ambiente, rut) [pk]
+  }
+  Note: 'Resolución SII de cada emisor por ambiente (caché de la consulta pública).'
+}
+
+Table rvd_envios {
+  id integer [pk, increment]
+  rut_emisor text [not null]
+  fecha text [not null]
+  sec_envio integer [not null, default: `1`]
+  estado text [not null, default: `'pendiente'`]
+  track_id text
+  xml_path text
+  detalle text
+  creado_en text [not null]
+  actualizado_en text
+  indexes {
+    (rut_emisor, fecha, sec_envio) [unique]
+    (rut_emisor, fecha) [name: 'idx_rvd_rut_fecha']
+  }
+  Note: 'Registro de Ventas Diario de boletas: una fila por emisor, día y secuencia.'
+}
+
+Table usuarios {
+  id integer [pk, increment]
+  username text [not null, unique]
+  hashed_password text [not null]
+  nombre_completo text
+  email text
+  activo integer [default: `1`]
+  creado_en text [not null]
+  ultimo_acceso text
+  Note: 'Cuentas de acceso (JWT). cuenta_id en otras tablas apunta aquí.'
+}
+
+Table valores {
+  indicador text [pk]
+  fecha text [pk]
+  valor real [not null]
+  actualizado text [not null]
+  indexes {
+    (fecha, indicador) [pk]
+  }
+  Note: 'UF, UTM y dólar por fecha (referencia pública del SII).'
+}
+
+Ref: certificados.cuenta_id > usuarios.id // cuenta dueña
+Ref: claves_sii.cuenta_id > usuarios.id // cuenta dueña
+Ref: negocios.cuenta_id > usuarios.id // cuenta dueña
+Ref: negocios.cert_id > certificados.id // certificado con que firma
+Ref: dtes.rut_emisor > negocios.rut // emisor
+Ref: cafs.rut_emisor > negocios.rut // emisor
+Ref: dtes.(rut_emisor, tipo_dte) > cafs.(rut_emisor, tipo_dte) // el folio sale del CAF activo
+Ref: rvd_envios.rut_emisor > negocios.rut // emisor
+Ref: rcv_documentos.rut_empresa > negocios.rut // empresa
+Ref: claves_sii.rut_empresa > negocios.rut // empresa
+Ref: resolucion_cache.rut > negocios.rut // emisor
+Ref: audit_log.(rut_emisor, tipo_dte, folio) > dtes.(rut_emisor, tipo_dte, folio) // documento

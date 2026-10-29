@@ -1,90 +1,89 @@
 """
 core/database.py
 
-Gestión de base de datos SQLite para persistencia de DTEs, folios y logs.
+Gestión de base de datos para persistencia de DTEs, folios y logs.
+
+Fachada estable para todo el motor. Desde la fase 1 del fork corre sobre SQLAlchemy
+(`core/datos.py`), con SQLite o PostgreSQL según `DATABASE_URL`, y el esquema lo crean y
+actualizan las migraciones de Alembic (`migraciones/`). Las consultas siguen escritas con `?`.
 """
 
 from __future__ import annotations
 
-import sqlite3
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Generator, Optional
 
+from core import datos
 from core.config import settings
+from core.datos import Conexion, Cursor, Fila
 
 
-DATABASE_PATH = Path(settings.database_url.replace("sqlite:///", ""))
+# Ruta del archivo SQLite (la usan las rutas de la app de escritorio, que comparten la base con
+# el motor Go). None con PostgreSQL.
+DATABASE_PATH: Optional[Path] = datos.ruta_sqlite()
+_DATABASE_PATH_ORIGINAL = DATABASE_PATH  # si alguien reasigna DATABASE_PATH, core/datos.py lo sigue
 
 
-def get_connection() -> sqlite3.Connection:
+def get_connection() -> Conexion:
     """
-    Obtiene una conexión a la base de datos SQLite.
+    Obtiene una conexión a la base de datos (quien la pide hace `commit` y `close`).
 
     Returns:
-        Conexión SQLite configurada.
+        Conexión con la forma de `sqlite3.Connection`.
     """
-    DATABASE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(DATABASE_PATH))
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA foreign_keys=ON")
-    return conn
+    return datos.conectar()
 
 
 @contextmanager
-def get_db() -> Generator[sqlite3.Connection, None, None]:
+def get_db() -> Generator[Conexion, None, None]:
     """
     Context manager para obtener una conexión a la BD.
-    Cierra la conexión automáticamente al salir del contexto.
+    Confirma al salir, deshace si hay excepción y cierra la conexión.
     """
-    conn = get_connection()
-    try:
+    with datos.transaccion() as conn:
         yield conn
-        conn.commit()
-    except Exception:
-        conn.rollback()
-        raise
-    finally:
-        conn.close()
 
 
 def init_db() -> None:
     """
-    Inicializa la base de datos creando todas las tablas necesarias.
-    Se ejecuta al iniciar la aplicación.
+    Crea o actualiza el esquema con las migraciones de Alembic (`alembic upgrade head`).
+    Se ejecuta al iniciar la aplicación; una base creada antes de Alembic se adopta sola.
     """
-    with get_db() as conn:
-        conn.executescript(SCHEMA_SQL)
+    from core import migrar
+    migrar.actualizar()
 
 
-def ejecutar(sql: str, params: tuple = ()) -> sqlite3.Cursor:
+def ejecutar(sql: str, params: tuple = ()) -> Cursor:
     """Ejecuta una consulta SQL."""
     with get_db() as conn:
         return conn.execute(sql, params)
 
 
-def ejecutar_many(sql: str, params_list: list[tuple]) -> sqlite3.Cursor:
+def ejecutar_many(sql: str, params_list: list[tuple]) -> Cursor:
     """Ejecuta una consulta SQL con múltiples conjuntos de parámetros."""
     with get_db() as conn:
         return conn.executemany(sql, params_list)
 
 
-def obtenerUno(sql: str, params: tuple = ()) -> Optional[sqlite3.Row]:
+def obtenerUno(sql: str, params: tuple = ()) -> Optional[Fila]:
     """Ejecuta una consulta y retorna un solo resultado."""
     with get_db() as conn:
         cursor = conn.execute(sql, params)
         return cursor.fetchone()
 
 
-def obtener_todos(sql: str, params: tuple = ()) -> list[sqlite3.Row]:
+def obtener_todos(sql: str, params: tuple = ()) -> list[Fila]:
     """Ejecuta una consulta y retorna todos los resultados."""
     with get_db() as conn:
         cursor = conn.execute(sql, params)
         return cursor.fetchall()
 
 
+# Esquema heredado: el que upstream crea al arrancar. Ya no se ejecuta al iniciar (lo reemplaza
+# la migración 0001); se conserva para comparar en tests/unit/test_esquema.py y para adoptar
+# bases creadas antes de Alembic (core/migrar.py).
 SCHEMA_SQL = """
 -- Tabla de documentos DTE emitidos
 CREATE TABLE IF NOT EXISTS dtes (

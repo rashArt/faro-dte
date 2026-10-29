@@ -31,4 +31,4 @@ def test_contexto_emision_no_entrega_clave_privada_a_un_jwt(cliente, admin):
     r = cliente.post("/api/v1/keystore/negocios", headers=admin, data={"rut": RUT_EMISOR, "cert_id": cert_id})
     assert r.status_code in (200, 201), r.text
     r = cliente.get(f"/api/v1/keystore/negocios/{r.json()['id']}/contexto-emision", headers=admin)
-    assert "key_pem" not in r.text
+    assert r.status_code in (401, 403) and "key_pem" not in r.text
