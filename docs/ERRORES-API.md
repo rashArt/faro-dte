@@ -39,14 +39,18 @@ Implementación: [`core/errors.py`](../core/errors.py) (errores de dominio) +
 | `ya_emitido` | 409 | La venta (`id_externo`) ya tiene un documento timbrado con otros datos: se corrige con NC/ND. `detalle`: `dte_id`, `folio`, `estado`. | `ConflictoError` (servicio de emisión) |
 | `caf` | 422 | CAF inválido, corrupto, de otro RUT/tipo, o vencido. | `CAFError` |
 | `certificado` | 422 | El `.p12`/`.pfx` no carga (clave errada, vencido). | `CertificadoError` |
-| `autenticacion` | 401 | Credenciales faltantes o inválidas. | `AutenticacionError` |
-| `autorizacion` | 403 | Autenticado pero sin permiso. | `AutorizacionError` |
+| `autenticacion` | 401 | Credenciales faltantes o inválidas (token revocado, clave vieja tras renovar, JWT anterior a un cambio de contraseña). Trae `WWW-Authenticate: Bearer`. | `AutenticacionError` |
+| `autorizacion` | 403 | Autenticado pero sin permiso: un token de integración fuera de su rol (`core/autorizacion.py`). | `AutorizacionError` |
+| `demasiadas_solicitudes` | 429 | Demasiados logins fallidos (usuario+IP) o Bearer inválidos (IP). Espera los segundos de `Retry-After`. | `HTTPException` (`core/limites.py`) |
 | `sii_comunicacion` | 502 | Fallo hablando con el SII (red, timeout, HTTP 5xx). | `SIIError` |
 | `sii_rechazo` | 422 | El SII procesó y **rechazó** el DTE (trae `codigo_sii`). | `SIIRechazoError` |
 | `error_emision` | 500 | Falló la generación después de reservar el folio. `detalle`: `dte_id`, `folio`, `estado: error`; el mismo `id_externo` lo reintenta con ese folio. | `DTEChileError` (servicio de emisión) |
 | `error_interno` | 500 | Bug/fallo inesperado. Traza al log, mensaje genérico. | (catch-all) |
 
 Un `UNIQUE` de la base que choca (`IntegrityError`) responde `conflicto` 409, sin el SQL.
+
+Un token que pide un documento que no emitió recibe `no_encontrado` 404, no 403: la respuesta no
+revela que el documento existe.
 
 Para `sii_rechazo`, `detalle.codigo_sii` trae el código del SII (ej. `DTE-3-101`
 folio duplicado, `CAF-3-517` CAF vencido, `TED-2-510` timbre inválido).

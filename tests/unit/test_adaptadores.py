@@ -71,6 +71,16 @@ def test_cache_memoria_vence(monkeypatch):
     assert c.obtener("k") is None
 
 
+def test_contador_de_intentos(cache_limpia):
+    """Los límites de login (fase 4) cuentan en la caché: memoria o Redis."""
+    assert cache_limpia.incrementar("intentos", 60) == 1
+    assert cache_limpia.incrementar("intentos", 60) == 2
+    assert 0 < cache_limpia.restante("intentos") <= 60
+    assert cache_limpia.restante("no-existe") == 0
+    cache_limpia.borrar("intentos")
+    assert cache_limpia.incrementar("intentos", 60) == 1
+
+
 def test_token_se_pide_una_vez_por_servicio(cert, cache_limpia, tokens):
     from core.adaptadores.sii import ClienteBoletas, ClienteFacturas
     from core.sii import AmbienteSII

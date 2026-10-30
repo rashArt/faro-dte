@@ -1,5 +1,5 @@
 // Esquema de la base de Faro (motor Python), generado por tools/generar_dbml.py.
-// Migración: 0002. No editar a mano: regenerar tras cada migración.
+// Migración: 0003. No editar a mano: regenerar tras cada migración.
 // Tipos de SQLite; en PostgreSQL, INTEGER es BIGINT, REAL es DOUBLE PRECISION y BLOB es BYTEA.
 // Las relaciones (Ref) son lógicas: el esquema heredado no declara claves foráneas.
 
@@ -13,7 +13,10 @@ Table api_keys {
   activo integer [not null, default: `1`]
   creado text [not null]
   ultimo_uso text
-  Note: 'Claves de API (hoy sin cuenta asociada; la fase 4 las liga al administrador).'
+  rol text [not null, default: `'integracion'`]
+  creado_por integer
+  renovado text
+  Note: 'Tokens de los sistemas que llaman a la API, rol integracion (permisos en core/autorizacion.py). Solo el hash SHA-256. Renovar cambia el secreto y conserva el id (fork, 0003).'
 }
 
 Table audit_log {
@@ -25,11 +28,16 @@ Table audit_log {
   detalle text
   ip_origen text
   creado_en text [not null]
+  actor text
+  metodo text
+  ruta text
+  estado_http integer
   indexes {
     (accion) [name: 'idx_audit_accion']
+    (actor) [name: 'idx_audit_actor']
     (creado_en) [name: 'idx_audit_fecha']
   }
-  Note: 'Bitácora de acciones (emisión, envío, CAF).'
+  Note: 'Bitácora de acciones (emisión, envío, CAF) y de cada petición que cambia algo: actor (usuario:<id> o apikey:<id>), método, ruta, código HTTP e IP; nunca el cuerpo (fork, 0003).'
 }
 
 Table cafs {
@@ -101,6 +109,7 @@ Table dtes {
   actualizado_en text [not null]
   intento integer [not null, default: `0`]
   motivo_error text
+  origen text
   indexes {
     (rut_emisor, tipo_dte, folio) [unique]
     (estado) [name: 'idx_dtes_estado']
@@ -108,7 +117,7 @@ Table dtes {
     (rut_emisor) [name: 'idx_dtes_rut_emisor']
     (tipo_dte, folio) [name: 'idx_dtes_tipo_folio']
   }
-  Note: 'Documentos emitidos: uno por folio (UNIQUE rut_emisor + tipo_dte + folio). Guarda el XML firmado. estado reservado/error = sin timbre (el folio se reusa); intento nombra la carpeta de archivos.'
+  Note: 'Documentos emitidos: uno por folio (UNIQUE rut_emisor + tipo_dte + folio). Guarda el XML firmado. estado reservado/error = sin timbre (el folio se reusa); intento nombra la carpeta de archivos. origen = quién lo emitió por /dte/emitir (usuario:<id> o apikey:<id>; fork, 0003).'
 }
 
 Table emisiones {
@@ -228,7 +237,8 @@ Table usuarios {
   activo integer [default: `1`]
   creado_en text [not null]
   ultimo_acceso text
-  Note: 'Cuentas de acceso (JWT). cuenta_id en otras tablas apunta aquí.'
+  clave_cambiada_en text
+  Note: 'Cuentas de acceso (JWT), rol administrador. cuenta_id en otras tablas apunta aquí. clave_cambiada_en invalida los JWT anteriores (fork, 0003).'
 }
 
 Table valores {
@@ -255,3 +265,4 @@ Ref: claves_sii.rut_empresa > negocios.rut // empresa
 Ref: resolucion_cache.rut > negocios.rut // emisor
 Ref: audit_log.(rut_emisor, tipo_dte, folio) > dtes.(rut_emisor, tipo_dte, folio) // documento
 Ref: emisiones.dte_id > dtes.id // documento de la venta
+Ref: api_keys.creado_por > usuarios.id // quién creó el token

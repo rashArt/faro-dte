@@ -69,7 +69,9 @@ Punto de entrada único que rutea por tipo: **`core/orchestrator.py::emitir_docu
 (39/41 → `EnvioBOLETA` + REST; el resto → `EnvioDTE` + SOAP). En el fork, `POST /api/v1/dte/emitir`
 pasa por `core/servicios/emision.py` (`id_externo`, folio y fila en una transacción, timbrado =
 emitido; `docs/deploy/PLAN.md` fase 2), que usa los mismos pasos de los orquestadores. Las rutas
-del fork hablan con el SII por `core/adaptadores/sii.py` (token en caché, fase 3).
+del fork hablan con el SII por `core/adaptadores/sii.py` (token en caché, fase 3). Roles y permisos
+del fork (fase 4): `core/autorizacion.py` (lo que puede un token `integracion`), `core/limites.py`
+(intentos fallidos), `api/auditoria.py` (quién hizo qué) y `GET /api/v1/auditoria`.
 
 ## Estructura
 
@@ -80,7 +82,7 @@ del fork hablan con el SII por `core/adaptadores/sii.py` (token en caché, fase 
 | `nucleo-rs/` | El motor en **Rust** (destino del port), el que va adentro de Faro → `nucleo-rs/README.md` |
 | `app-rs/`, `app/` | La app de escritorio **Faro** (Tauri + Rust = la publicada; Wails + Go = alternativa); interfaz compartida en `app/frontend/dist` → [`APP.md`](APP.md) |
 | `core/xsd/` | Esquemas oficiales del SII (ISO-8859-1 → usa `grep -a`) |
-| `api/routes/` | 14 routers bajo `/api/v1` (incl. `mipyme`, `simulacion`, `valores`) → [`mapa/interfaces.md`](mapa/interfaces.md) |
+| `api/routes/` | 15 routers bajo `/api/v1` (incl. `mipyme`, `simulacion`, `valores`, `auditoria`; `db` es alias obsoleto) → [`mapa/interfaces.md`](mapa/interfaces.md) |
 | `main.py` | Composición: lifespan, gate de seguridad, scheduler del RVD |
 | `mcp_server.py` | 20 herramientas MCP (los certs **no** viajan por el protocolo) |
 | `static/` | 4 páginas: `onboarding.html` (wizard), `certificados.html` (panel, incl. Portal SII), `documentos.html` (emitidos, con PDF/XML), `apikeys.html` |

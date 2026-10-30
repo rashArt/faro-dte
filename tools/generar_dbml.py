@@ -26,13 +26,17 @@ DESTINO = RAIZ / "docs" / "deploy" / "schema.dbml"
 
 NOTAS = {
     "dtes": "Documentos emitidos: uno por folio (UNIQUE rut_emisor + tipo_dte + folio). Guarda el XML firmado. "
-            "estado reservado/error = sin timbre (el folio se reusa); intento nombra la carpeta de archivos.",
+            "estado reservado/error = sin timbre (el folio se reusa); intento nombra la carpeta de archivos. "
+            "origen = quién lo emitió por /dte/emitir (usuario:<id> o apikey:<id>; fork, 0003).",
     "cafs": "Rangos de folios autorizados por el SII. folio_siguiente es el contador atómico (L7).",
-    "audit_log": "Bitácora de acciones (emisión, envío, CAF).",
-    "usuarios": "Cuentas de acceso (JWT). cuenta_id en otras tablas apunta aquí.",
+    "audit_log": "Bitácora de acciones (emisión, envío, CAF) y de cada petición que cambia algo: actor "
+                 "(usuario:<id> o apikey:<id>), método, ruta, código HTTP e IP; nunca el cuerpo (fork, 0003).",
+    "usuarios": "Cuentas de acceso (JWT), rol administrador. cuenta_id en otras tablas apunta aquí. "
+                "clave_cambiada_en invalida los JWT anteriores (fork, 0003).",
     "rvd_envios": "Registro de Ventas Diario de boletas: una fila por emisor, día y secuencia.",
     "valores": "UF, UTM y dólar por fecha (referencia pública del SII).",
-    "api_keys": "Claves de API (hoy sin cuenta asociada; la fase 4 las liga al administrador).",
+    "api_keys": "Tokens de los sistemas que llaman a la API, rol integracion (permisos en core/autorizacion.py). "
+                "Solo el hash SHA-256. Renovar cambia el secreto y conserva el id (fork, 0003).",
     "folios_gestion": "Estado de la reposición automática de folios por clave (rut y tipo).",
     "certificados": "Certificados .p12 y su contraseña, cifrados con Fernet (L6).",
     "claves_sii": "Claves del portal del SII de cada empresa, cifradas.",
@@ -58,6 +62,7 @@ RELACIONES = [
     ("resolucion_cache.rut", "negocios.rut", "emisor"),
     ("audit_log.(rut_emisor, tipo_dte, folio)", "dtes.(rut_emisor, tipo_dte, folio)", "documento"),
     ("emisiones.dte_id", "dtes.id", "documento de la venta"),
+    ("api_keys.creado_por", "usuarios.id", "quién creó el token"),
 ]
 
 

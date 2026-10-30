@@ -36,10 +36,15 @@ Al apagar: `await programador.detener()`.
 importación de emitidos a `dtes` con PDF, sincronizar).
 
 `certificado`, `caf`, `dte` y `status` están protegidos **a nivel de router** en `main.py`
-(`dependencies=[Depends(requerir_autenticacion)]`); el resto (`db/*`, `keystore/*`,
-`onboarding/*`, `monitoreo/*`, `auth/usuarios|me`) lo exige **por endpoint** con la misma
-dependencia. `requerir_autenticacion` acepta indistintamente un **JWT o una API key**
-(`core/apikeys.py`, gestionadas vía `/apikeys` con JWT — una key no puede crear más keys).
+(`dependencies=[Depends(requerir_autenticacion)]`); el resto (`keystore/*`, `onboarding/*`,
+`monitoreo/*`, `auth/usuarios|me`) lo exige **por endpoint** con la misma dependencia.
+`requerir_autenticacion` acepta indistintamente un **JWT o una API key** (`core/apikeys.py`,
+gestionadas vía `/apikeys` con JWT — una key no puede crear más keys).
+
+En el fork (fase 4 de `docs/deploy/PLAN.md`) la API key es un token con rol `integracion`:
+`requerir_autenticacion` le niega lo que no esté en `core/autorizacion.py` (403). `db/*` quedó
+como alias obsoleto, solo administrador y fuera de `/docs`: sus rutas viven en `/dte/documentos`,
+`/caf` y `/auditoria` (router `auditoria`).
 
 Los que importan para emitir:
 - `POST /api/v1/dte/emitir` (`dte.py:281`) — orquestado; **rutea 39/41 a EnvioBOLETA** (`:287`).

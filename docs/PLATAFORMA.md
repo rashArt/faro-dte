@@ -75,7 +75,7 @@ curl -X POST http://localhost:8000/api/v1/dte/emitir \
 | POST | `/api/v1/dte/previsualizar` | Pre-vuelo (firma+PDF sin enviar) | Sí |
 | GET | `/api/v1/estado/...` | Estado de un envío por TrackID | mixto |
 | GET | `/api/v1/monitoreo/folios?rut=` | Salud de folios (restantes/estado) | Sí |
-| GET | `/api/v1/db/dtes` | Listar DTE emitidos | Sí |
+| GET | `/api/v1/dte/documentos` | Listar DTE emitidos (en el fork; Go y Rust: `/api/v1/db/dtes`) | Sí |
 | GET | `/consulta` · `/consulta/api` | **Buscador público** (sin auth) | No |
 | GET | `/health` · `/docs` | Salud / Swagger | No |
 

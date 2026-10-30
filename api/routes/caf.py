@@ -108,3 +108,18 @@ def validar_folio(body: ValidarFolioRequest) -> ValidarFolioResponse:
             else f"El folio {body.folio} está FUERA del rango [{caf.datos.folio_desde}-{caf.datos.folio_hasta}] del CAF."
         ),
     )
+
+
+# ---- CAF registrados y folios (antes bajo /api/v1/db, fase 4 de docs/deploy/PLAN.md) ----
+# Misma implementación que el alias obsoleto `/api/v1/db/*` (api/routes/db.py), que Go y Rust
+# siguen sirviendo y `tools/contrato_api.py` compara.
+from api.routes import db as _db  # noqa: E402
+
+router.add_api_route("", _db.get_cafs, methods=["GET"], response_model=list[_db.CAFResponse],
+                     summary="Listar CAF registrados")
+router.add_api_route("", _db.post_registrar_caf, methods=["POST"], response_model=_db.CAFResponse,
+                     summary="Registrar un CAF subiendo el XML del SII")
+router.add_api_route("/activo/{rut_emisor}/{tipo_dte}", _db.get_caf_activo, methods=["GET"],
+                     response_model=_db.CAFResponse, summary="CAF activo de un emisor y tipo")
+router.add_api_route("/folios/siguiente/{rut_emisor}/{tipo_dte}", _db.get_siguiente_folio, methods=["GET"],
+                     response_model=_db.FolioDisponibleResponse, summary="Siguiente folio disponible")

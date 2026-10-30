@@ -89,7 +89,7 @@ def main() -> int:
             return "conexion", {"error": repr(e)[:80]}
 
     with open(FIXTURES / "caf_33.xml", "rb") as f:
-        r = httpx.post(f"{B}/api/v1/db/cafs", headers=h, files={"archivo": ("caf_33.xml", f, "text/xml")})
+        r = httpx.post(f"{B}/api/v1/caf", headers=h, files={"archivo": ("caf_33.xml", f, "text/xml")})
     print(f"CAF ficticio T33 (1-100): {r.status_code}")
 
     print("\n1. Registro de usuarios sin token")
@@ -98,7 +98,7 @@ def main() -> int:
     if r.status_code == 201:
         ti = {"Authorization": f"Bearer {login('intruso', 'clave-de-prueba-intruso')}"}
         r2 = httpx.post(f"{B}/api/v1/apikeys", json={"nombre": "del-intruso"}, headers=ti)
-        r3 = httpx.get(f"{B}/api/v1/db/dtes", headers=ti)
+        r3 = httpx.get(f"{B}/api/v1/dte/documentos", headers=ti)
         veredicto(r2.status_code >= 400 and r3.status_code >= 400,
                   f"el usuario recién registrado crea API keys ({r2.status_code}) y lista documentos ({r3.status_code})")
 
@@ -154,6 +154,17 @@ def main() -> int:
     [t.join() for t in hilos]
     veredicto(bool(tiempos) and max(tiempos) < 500,
               f"/health: {len(tiempos)} consultas, máximo {max(tiempos):.0f} ms (antes de la fase 3: 1.533 ms)")
+
+    print("\n7. Roles y límites (fase 4)")
+    r = httpx.post(f"{B}/api/v1/apikeys", json={"nombre": "sondeo"}, headers=h)
+    tk = {"Authorization": f"Bearer {r.json().get('api_key')}"}
+    codigos = {ruta: httpx.request(m, f"{B}{ruta}", headers=tk, json={"nombre": "x"}).status_code
+               for m, ruta in (("GET", "/api/v1/auditoria"), ("POST", "/api/v1/apikeys"),
+                               ("GET", "/api/v1/auth/usuarios"), ("GET", "/api/v1/db/dtes"))}
+    veredicto(set(codigos.values()) == {403}, f"un token fuera de su rol: {codigos}")
+    fallos = [httpx.post(f"{B}/api/v1/auth/login", json={"username": "sondeo_bloqueo", "password": "x"}).status_code
+              for _ in range(6)]
+    veredicto(fallos[-1] == 429, f"logins fallidos seguidos: {fallos} (el último, 429)")
 
     print(f"\n{len(hallazgos)} hallazgo(s).")
     return 1 if hallazgos else 0

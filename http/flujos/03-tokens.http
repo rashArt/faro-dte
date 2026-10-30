@@ -1,0 +1,117 @@
+# Flujo 3 — Tokens de integración, roles y auditoría (fase 4 de docs/deploy/PLAN.md).
+# Escrito a mano. Ejecuta los bloques en orden (Ctrl+Alt+R sobre cada uno).
+# Antes corre los pasos 1 a 4 de 02-cliente.http (CAF y certificado de EMPRESA DEMO SPA cargados).
+# Firma y timbra con el CAF y el certificado ficticios: nunca envía al SII.
+
+@clave = {{$dotenv FARO_CLAVE}}
+@venta = pedido-token-1
+
+### 1. Iniciar sesión (administrador)
+# @name login
+POST {{base}}/api/v1/auth/login
+Content-Type: application/json
+
+{"username": "{{usuario}}", "password": "{{clave}}"}
+
+###
+@token = {{login.response.body.access_token}}
+
+### 2. Crear el token del punto de venta → 201; la clave sale UNA vez
+# @name crear
+POST {{base}}/api/v1/apikeys
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"nombre": "punto-de-venta"}
+
+###
+@pos = {{crear.response.body.api_key}}
+@pos_id = {{crear.response.body.id}}
+
+### 3. ¿Quién soy? con el token → tipo apikey, rol integracion
+GET {{base}}/api/v1/auth/me
+Authorization: Bearer {{pos}}
+
+### 4. El token emite (con id_externo, certificado del negocio) → 200
+# @name emitir
+POST {{base}}/api/v1/dte/emitir
+Authorization: Bearer {{pos}}
+Content-Type: application/json
+
+{
+  "id_externo": "{{venta}}",
+  "dte": {
+    "tipo_dte": 33,
+    "emisor": {"rut": "77777777-7", "razon_social": "EMPRESA DEMO SPA", "giro": "Cafeteria",
+               "codigo_actividad": 561000, "direccion": "Calle Ficticia 123",
+               "comuna": "Santiago", "ciudad": "Santiago"},
+    "receptor": {"rut": "76111111-6", "razon_social": "CLIENTE DEMO LTDA", "giro": "Comercio",
+                 "direccion": "Av Siempreviva 742", "comuna": "Santiago"},
+    "items": [{"numero_linea": 1, "nombre": "Servicio mensual", "cantidad": 1, "precio_unitario": 10000}]
+  }
+}
+
+### 5. Su documento sí lo ve → 200
+GET {{base}}/api/v1/dte/documentos/{{emitir.response.body.dte_id}}
+Authorization: Bearer {{pos}}
+
+### 6. Gestiona CAF: siguiente folio → 200
+GET {{base}}/api/v1/caf/folios/siguiente/77777777-7/33
+Authorization: Bearer {{pos}}
+
+### 7. El listado general de documentos es del administrador → 403
+GET {{base}}/api/v1/dte/documentos
+Authorization: Bearer {{pos}}
+
+### 8. Crear usuarios o tokens, o leer la auditoría → 403
+GET {{base}}/api/v1/auditoria
+Authorization: Bearer {{pos}}
+
+### 9. El token se renueva a sí mismo → 200, mismo id, clave nueva (la anterior muere ya)
+# @name renovar
+POST {{base}}/api/v1/apikeys/propia/renovar
+Authorization: Bearer {{pos}}
+
+###
+@pos_nueva = {{renovar.response.body.api_key}}
+
+### 10. La clave vieja → 401
+GET {{base}}/api/v1/auth/me
+Authorization: Bearer {{pos}}
+
+### 11. Reintento de la misma venta con la clave nueva → 200, mismo folio, "repetido": true
+POST {{base}}/api/v1/dte/emitir
+Authorization: Bearer {{pos_nueva}}
+Content-Type: application/json
+
+{
+  "id_externo": "{{venta}}",
+  "dte": {
+    "tipo_dte": 33,
+    "emisor": {"rut": "77777777-7", "razon_social": "EMPRESA DEMO SPA", "giro": "Cafeteria",
+               "codigo_actividad": 561000, "direccion": "Calle Ficticia 123",
+               "comuna": "Santiago", "ciudad": "Santiago"},
+    "receptor": {"rut": "76111111-6", "razon_social": "CLIENTE DEMO LTDA", "giro": "Comercio",
+                 "direccion": "Av Siempreviva 742", "comuna": "Santiago"},
+    "items": [{"numero_linea": 1, "nombre": "Servicio mensual", "cantidad": 1, "precio_unitario": 10000}]
+  }
+}
+
+### 12. Auditoría (administrador): lo que hizo el token, sin cuerpos
+GET {{base}}/api/v1/auditoria?actor=apikey:{{pos_id}}
+Authorization: Bearer {{token}}
+
+### 13. Revocar el token → 200; desde ya responde 401
+DELETE {{base}}/api/v1/apikeys/{{pos_id}}
+Authorization: Bearer {{token}}
+
+### 14. Con el token revocado → 401
+GET {{base}}/api/v1/auth/me
+Authorization: Bearer {{pos_nueva}}
+
+### 15. Login con clave mala: repítelo 5 veces → 401, 401, 401, 401 y 429 (bloqueo de 15 minutos
+# para ese usuario desde tu IP; los demás usuarios siguen entrando)
+POST {{base}}/api/v1/auth/login
+Content-Type: application/json
+
+{"username": "persona-de-prueba", "password": "clave-equivocada"}

@@ -20,6 +20,8 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from core.auth import requerir_autenticacion, solicitante
+from core.autorizacion import exigir_documento_propio
+from api.routes.db import DTEResponse
 from core.caf import ManejadorCAF
 from core.config import settings
 from core.crypto import CertificadoDigital
@@ -114,16 +116,21 @@ def listar_documentos(
     tipo_dte: Optional[int] = None,
     estado: Optional[str] = None,
     rut_emisor: Optional[str] = None,
+    fecha_desde: Optional[str] = None,
+    fecha_hasta: Optional[str] = None,
+    offset: int = 0,
 ) -> dict:
     """Lista los documentos emitidos, del más reciente al más antiguo.
 
     Es la vista "¿qué fue de mi última boleta?": folio, montos, estado
     (generado/enviado/aceptado/rechazado) y TrackID, sin tener que mirar la BD.
-    El XML no se incluye (para eso está `/consulta/xml` o la BD).
+    El XML no se incluye (para eso está `/documentos/{id}/xml`). Fechas de emisión en
+    `YYYY-MM-DD`. Solo el administrador: un token ve sus documentos de a uno.
     """
     from pathlib import Path
     docs = listar_dtes(rut_emisor=rut_emisor, tipo_dte=tipo_dte, estado=estado,
-                       limite=max(1, min(limite, 200)))
+                       fecha_desde=fecha_desde, fecha_hasta=fecha_hasta,
+                       limite=max(1, min(limite, 200)), offset=max(0, offset))
     for d in docs:
         d["tiene_xml"] = bool(d.pop("xml_firmado", None))
         pp = ruta_desde_bd(d.get("pdf_path"))
@@ -164,11 +171,34 @@ def emisores_documentos() -> dict:
                           "documentos": f["n"], "ultimo": f["ultimo"]} for f in filas]}
 
 
+# Antes que `/documentos/{dte_id}`: si no, "buscar" se toma por un id y responde 422.
+@router.get("/documentos/buscar", response_model=DTEResponse, summary="Buscar un documento por emisor, tipo y folio")
+def buscar_documento(rut_emisor: str, tipo_dte: int, folio: int,
+                     usuario: dict = Depends(requerir_autenticacion)):
+    """Antes `GET /api/v1/db/dtes/buscar/{rut}/{tipo}/{folio}`. Un token encuentra solo los suyos."""
+    from core.errors import RecursoNoEncontrado
+    from core.models import obtener_dte_por_folio
+    d = obtener_dte_por_folio(rut_emisor, tipo_dte, folio)
+    if not d:
+        raise RecursoNoEncontrado("DTE no encontrado")
+    exigir_documento_propio(usuario, d["id"])
+    return DTEResponse(**d)
+
+
+@router.get("/documentos/{dte_id}", response_model=DTEResponse, summary="Un documento por su id")
+def obtener_documento(dte_id: int, usuario: dict = Depends(requerir_autenticacion)):
+    """Antes `GET /api/v1/db/dtes/{id}`. Un token ve solo los documentos que emitió."""
+    from api.routes import db as _db
+    exigir_documento_propio(usuario, dte_id)
+    return _db.get_dte(dte_id, usuario)
+
+
 @router.get("/documentos/{dte_id}/pdf", summary="PDF de un documento (motor o canal MIPYME)")
-def pdf_documento(dte_id: int) -> Response:
+def pdf_documento(dte_id: int, usuario: dict = Depends(requerir_autenticacion)) -> Response:
     """Sirve el PDF guardado en disco (el del motor, o el que bajó el importador MIPYME)."""
     from pathlib import Path
     from core.errors import RecursoNoEncontrado
+    exigir_documento_propio(usuario, dte_id)
     d = obtener_dte(dte_id)
     if not d:
         raise RecursoNoEncontrado(f"Documento {dte_id} no existe")
@@ -183,7 +213,7 @@ def pdf_documento(dte_id: int) -> Response:
 
 
 @router.post("/documentos/{dte_id}/pdf", summary="(Re)generar el PDF de un documento desde su XML firmado")
-def regenerar_pdf_documento(dte_id: int) -> dict:
+def regenerar_pdf_documento(dte_id: int, usuario: dict = Depends(requerir_autenticacion)) -> dict:
     """Para documentos que tienen XML pero no PDF: los que emite el núcleo en Go (que no hace
     PDF) o los importados. Reconstruye la entrada desde el XML (`core/dte_xml.py`), dibuja el
     PDF con el TED original y guarda la ruta. Boletas (39/41) salen en formato 80 mm."""
@@ -194,6 +224,7 @@ def regenerar_pdf_documento(dte_id: int) -> dict:
     from core.models import guardar_pdf_dte
     from core.orchestrator import ruta_para_bd
     from core.pdf_gen import generar_boleta_80mm, generar_pdf_dte
+    exigir_documento_propio(usuario, dte_id)
     d = obtener_dte(dte_id)
     if not d:
         raise RecursoNoEncontrado(f"Documento {dte_id} no existe")
@@ -213,10 +244,11 @@ def regenerar_pdf_documento(dte_id: int) -> dict:
 
 
 @router.get("/documentos/{dte_id}/xml", summary="XML firmado de un documento")
-def xml_documento(dte_id: int) -> Response:
+def xml_documento(dte_id: int, usuario: dict = Depends(requerir_autenticacion)) -> Response:
     """El XML firmado tal como se guardó (ISO-8859-1). Los importados del historial MIPYME
     no lo tienen: el portal solo entregó el PDF."""
     from core.errors import RecursoNoEncontrado
+    exigir_documento_propio(usuario, dte_id)
     d = obtener_dte(dte_id)
     if not d:
         raise RecursoNoEncontrado(f"Documento {dte_id} no existe")

@@ -4,39 +4,45 @@ Cómo llama el backend de tu producto a una instancia de cliente (`http://faro-<
 red interna; ver [`README.md`](README.md)). Para el contrato exacto de cada endpoint usa Swagger
 en tu instancia local (`http://localhost:8000/docs`). Para los errores, [`../ERRORES-API.md`](../ERRORES-API.md).
 
-> **Estado (2026-10-29, motor Python):** describe la API **actual**. Sirve para aprender y probar
-> en local (los mismos llamados están en `http/api/*.http` y `http/flujos/`). La fase 2 de
-> [`PLAN.md`](PLAN.md) cerró las fugas de integridad (registro abierto, duplicados al reintentar,
-> folio explícito que corrompía documentos, clave privada por `contexto-emision`) y toma el
-> certificado del keystore. **Todavía no está lista para integrar productos**: falta enviar y
-> consultar por documento, tokens por producto y emisor opcional (fases 4 y 5); este documento
-> se reescribe al cerrarlas.
+> **Estado (2026-10-30, motor Python):** describe la API **actual**. Sirve para aprender y probar
+> en local (los mismos llamados están en `http/api/*.http` y `http/flujos/`). Las fases 2 y 4 de
+> [`PLAN.md`](PLAN.md) cerraron las fugas de integridad y dejaron roles y tokens por sistema.
+> **Todavía falta** enviar y consultar por documento y el emisor opcional (fase 5); este
+> documento se reescribe al cerrarla.
 
 ## Autenticación
 
-Todas las rutas usan `Authorization: Bearer <token>`. Hoy conviven varios mecanismos porque el
-motor también sirve a la app de escritorio (`APP_SHELL_KEY`) y al MCP (`MCP_AUTH_TOKEN`). En el
-servidor sobran: el plan (fase 4) deja **un administrador** y **un token de integración por
-producto**. Hoy hay dos tipos de token:
+Todas las rutas usan `Authorization: Bearer <token>`. Hay dos roles por instancia (una empresa
+por despliegue):
 
-| Token | Cómo se obtiene | Ve el keystore | Uso |
-|---|---|---|---|
-| **JWT** | `POST /api/v1/auth/login` `{"username","password"}`; dura `JWT_ACCESS_TOKEN_EXPIRE_MINUTES` (60) | **Sí**, el del usuario que inició sesión | alta del cliente y, hoy, la integración |
-| **API key** `dte_…` | `POST /api/v1/apikeys` `{"nombre": "<producto>"}` con un JWT; se muestra una sola vez | **No**: no tiene cuenta asociada (`usuario["id"]` es `None` en Python, cuenta 0 en Go) | rutas que no dependen del keystore |
+| Rol | Credencial | Qué hace |
+|---|---|---|
+| **administrador** | JWT: `POST /api/v1/auth/login` `{"username","password"}`; dura `JWT_ACCESS_TOKEN_EXPIRE_MINUTES` (60) | todo: usuarios, tokens, auditoría, alta del cliente |
+| **integracion** | token `dte_…` de tu sistema: lo crea el administrador con `POST /api/v1/apikeys` `{"nombre": "punto-de-venta"}` y se muestra **una sola vez** | emitir, enviar, consultar; gestionar certificados, negocios, CAF y folios de la empresa. Recibe 403 en usuarios, tokens, auditoría y el listado general de documentos |
 
-El keystore (certificados y negocios) es **por usuario**: lo que sube `admin` solo lo ve
-`admin`. Mientras las API keys no tengan cuenta (brecha 1), tu producto inicia sesión con el
-usuario dueño del certificado y renueva el JWT al vencer (o ante un 401).
+**Tu producto usa un token**, no el JWT: no vence y no depende de una contraseña. Uno por
+sistema que llama (punto de venta, tienda, ERP), así la auditoría (`GET /api/v1/auditoria`,
+administrador) dice cuál hizo qué.
+
+- **Ve solo lo suyo.** Un documento que no emitió ese token responde 404.
+- **Renovar** (rutina): `POST /api/v1/apikeys/propia/renovar` con el token, o
+  `POST /api/v1/apikeys/{id}/renovar` el administrador. Devuelve la clave nueva; **la anterior
+  muere en el acto**, así que guarda la nueva antes de cortar la vieja en tu configuración. El
+  `id` no cambia: tus `id_externo` siguen valiendo.
+- **Revocar** (clave filtrada): `DELETE /api/v1/apikeys/{id}` (administrador). Corta al instante.
+- **Límites:** 5 logins fallidos por usuario+IP bloquean 15 minutos; 20 Bearer inválidos por IP
+  hacen que los inválidos respondan 429. Respeta `Retry-After`.
 
 ```bash
-TOKEN=$(curl -s -X POST http://faro-acme:8000/api/v1/auth/login \
-  -H 'Content-Type: application/json' \
-  -d '{"username":"admin","password":"<ADMIN_PASSWORD>"}' | jq -r .access_token)
+TOKEN=dte_...   # el que te entregó el administrador; guárdalo como secreto de tu sistema
+curl -s http://faro-acme:8000/api/v1/auth/me -H "Authorization: Bearer $TOKEN"
+# {"tipo": "apikey", "id": 3, "nombre": "punto-de-venta", "rol": "integracion"}
 ```
 
 ## Alta de un cliente (una vez)
 
-Hazla con JWT desde una herramienta interna o un script de onboarding. El orden es el de
+Hazla con el JWT del administrador desde una herramienta interna o un script de onboarding
+(el token de integración también puede subir certificados y CAF). El orden es el de
 [`../PLATAFORMA.md`](../PLATAFORMA.md) §2:
 
 | Paso | Llamada | Notas |
@@ -45,7 +51,7 @@ Hazla con JWT desde una herramienta interna o un script de onboarding. El orden 
 | 2. Negocio | `POST /api/v1/keystore/negocios` (form: `rut`, `cert_id`, `ambiente`) | Completa la razón social desde el SII. Los datos del emisor se corrigen con `PUT /api/v1/keystore/negocios/{id}`. |
 | 3. Diagnóstico | `GET /api/v1/onboarding/diagnostico?rut=…&cert_id=…` | Si está autorizado, qué tipos puede emitir y qué falta. |
 | 4. Certificación | [`../CERTIFICACION.md`](../CERTIFICACION.md) | Solo si el cliente no está habilitado como emisor con software propio. Tiene pasos humanos. |
-| 5. Folios | `POST /api/v1/db/cafs` (subir el CAF) | Después se reponen solos (`FOLIOS_AUTO_*`), con los guardarraíles anti-acaparamiento (L7). |
+| 5. Folios | `POST /api/v1/caf` (subir el CAF) | Después se reponen solos (`FOLIOS_AUTO_*`), con los guardarraíles anti-acaparamiento (L7). |
 
 ## Emitir
 
@@ -105,8 +111,12 @@ curl -s -X POST http://faro-acme:8000/api/v1/dte/emitir \
 
 ## Consultar lo emitido
 
-- `GET /api/v1/dte/documentos`: listado (filtros en Swagger).
+- `GET /api/v1/dte/documentos/{dte_id}`: un documento (estado, montos, TrackID). Con un token,
+  solo los que emitió.
+- `GET /api/v1/dte/documentos/buscar?rut_emisor=&tipo_dte=&folio=`: el mismo, por folio.
 - `GET /api/v1/dte/documentos/{dte_id}/pdf` y `/xml`: el PDF con timbre y el XML firmado.
+- `GET /api/v1/dte/documentos`: listado con filtros (administrador).
+- `GET /api/v1/caf/folios/siguiente/{rut}/{tipo}`: siguiente folio del CAF activo.
 - `GET /api/v1/monitoreo/folios?rut=…`: folios restantes por tipo.
 
 ## Consulta pública de boletas
@@ -142,9 +152,8 @@ Lo que falta en el motor Python para que el producto opere sin tocar el certific
 ya existe en Go/Rust o en `core/`. Llevarla a Python **aumenta** la paridad entre motores (P3).
 Se mide con `tools/contrato_api.py`.
 
-1. **API keys con cuenta.** Una API key no tiene usuario dueño, así que no ve el keystore. Esto
-   pasa en los tres motores. Propuesta: guardar `usuario_id` del creador en `api_keys` y
-   resolver la cuenta por ahí. Mientras tanto, JWT.
+1. ~~**API keys con cuenta.**~~ Resuelto en la fase 4 (solo Python): el token opera sobre la
+   cuenta dueña de la instancia, con rol `integracion`.
 2. ~~**`cert_id` en `POST /api/v1/dte/emitir`.**~~ Resuelto en la fase 2 de otra forma: Python
    toma el certificado del negocio del emisor, sin `cert_id` en el cuerpo.
 3. **`POST /api/v1/dte/enviar-keystore`.** Envío de facturas con `cert_id`. Hay que portarlo de

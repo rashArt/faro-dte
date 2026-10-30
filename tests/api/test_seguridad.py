@@ -9,7 +9,7 @@ from tests.conftest import CLAVE_CERT, FIXTURES, RUT_EMISOR
 
 
 def test_rutas_protegidas_exigen_token(cliente):
-    assert cliente.get("/api/v1/db/dtes").status_code == 401
+    assert cliente.get("/api/v1/dte/documentos").status_code == 401
 
 
 @pytest.mark.hallazgo(1)

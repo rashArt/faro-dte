@@ -58,10 +58,12 @@ def _request_id(request: Request) -> str:
 
 
 def _json_error(status_code: int, codigo: str, mensaje: str, *,
-                request: Request, detalle: Optional[dict] = None) -> JSONResponse:
+                request: Request, detalle: Optional[dict] = None,
+                headers: Optional[dict] = None) -> JSONResponse:
     envelope = ErrorEnvelope(error=ErrorBody(
         codigo=codigo, mensaje=mensaje, detalle=detalle, request_id=_request_id(request)))
-    return JSONResponse(status_code=status_code, content=envelope.model_dump(exclude_none=True))
+    return JSONResponse(status_code=status_code, content=envelope.model_dump(exclude_none=True),
+                        headers=headers)
 
 
 def registrar_manejo_errores(app: FastAPI) -> None:
@@ -105,7 +107,9 @@ def registrar_manejo_errores(app: FastAPI) -> None:
     async def _validacion(request: Request, exc: RequestValidationError):
         # Sin `input`: el body puede traer credenciales (p.ej. clave_tributaria del canal MIPYME)
         # y no deben volver en la respuesta ni quedar en logs de proxy/navegador.
-        errores = [{k: v for k, v in e.items() if k != "input"} for e in exc.errors()]
+        # `ctx` puede traer la excepción de un validador propio (ValueError): va como texto.
+        errores = [{k: ({c: str(x) for c, x in v.items()} if k == "ctx" else v)
+                    for k, v in e.items() if k != "input"} for e in exc.errors()]
         return _json_error(422, "validacion", "Los datos enviados no son válidos.",
                            request=request, detalle={"errores": errores})
 
@@ -114,7 +118,10 @@ def registrar_manejo_errores(app: FastAPI) -> None:
         codigo = {401: "autenticacion", 403: "autorizacion", 404: "no_encontrado",
                   409: "conflicto", 429: "demasiadas_solicitudes"}.get(exc.status_code, "http_error")
         mensaje = exc.detail if isinstance(exc.detail, str) else "Error de solicitud."
-        return _json_error(exc.status_code, codigo, mensaje, request=request)
+        # `WWW-Authenticate` (401) y `Retry-After` (429) son parte de la respuesta: se conservan.
+        cabeceras = {k: v for k, v in (getattr(exc, "headers", None) or {}).items()
+                     if k.lower() in ("www-authenticate", "retry-after")}
+        return _json_error(exc.status_code, codigo, mensaje, request=request, headers=cabeceras or None)
 
     @app.exception_handler(Exception)
     async def _no_manejada(request: Request, exc: Exception):

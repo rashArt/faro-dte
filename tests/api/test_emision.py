@@ -20,7 +20,7 @@ def test_emision_basica_asigna_folio_y_guarda(instancia, admin, cuerpo):
     j = r.json()
     assert j["folio"] == 1
     assert folio_siguiente() == 2
-    assert instancia.get(f"/api/v1/db/dtes/{j['dte_id']}", headers=admin).status_code == 200
+    assert instancia.get(f"/api/v1/dte/documentos/{j['dte_id']}", headers=admin).status_code == 200
 
 
 def test_folios_automaticos_son_consecutivos(instancia, admin, cuerpo):
@@ -43,7 +43,7 @@ def test_reintento_con_mismo_id_externo_devuelve_mismo_folio(instancia, admin, c
 def test_folio_explicito_repetido_no_retrocede_ni_sobrescribe(instancia, admin, cuerpo):
     for i in range(3):
         instancia.post("/api/v1/dte/emitir", json=cuerpo(f"Venta {i}"), headers=admin)
-    pdf = Path(TMP / "storage").parent / instancia.get("/api/v1/db/dtes", headers=admin).json()["dtes"][-1]["pdf_path"]
+    pdf = Path(TMP / "storage").parent / instancia.get("/api/v1/dte/documentos", headers=admin).json()["documentos"][-1]["pdf_path"]
     huella = hashlib.sha256(pdf.read_bytes()).hexdigest() if pdf.exists() else None
     r = instancia.post("/api/v1/dte/emitir", json=cuerpo("Repite el folio 1", folio=1), headers=admin)
     assert r.status_code == 409

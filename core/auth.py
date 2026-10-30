@@ -2,19 +2,25 @@
 core/auth.py
 
 Módulo de autenticación JWT para proteger los endpoints de la API.
+
+Fase 4 (docs/deploy/PLAN.md): `requerir_autenticacion` resuelve la credencial una vez por petición
+(la guarda en `request.state`, con su `actor` para la auditoría), aplica los permisos del token
+(`core/autorizacion.py`) y cuenta los Bearer inválidos (`core/limites.py`). Un JWT emitido antes
+del último cambio de contraseña ya no vale.
 """
 
 from __future__ import annotations
 
 import secrets
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 
+from core import autorizacion, limites
 from core.config import settings
 from core.models import obtener_usuario_por_username, actualizar_ultimo_acceso
 
@@ -33,6 +39,21 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
 
 
+_HASH_SEÑUELO: Optional[str] = None
+
+
+def verificar_sin_revelar(plain_password: str, usuario: Optional[dict]) -> bool:
+    """Como `verify_password`, pero tarda lo mismo exista o no el usuario: sin usuario se verifica
+    contra un hash señuelo, así el tiempo de respuesta no dice qué usuarios existen."""
+    global _HASH_SEÑUELO
+    if usuario:
+        return verify_password(plain_password, usuario["hashed_password"])
+    if _HASH_SEÑUELO is None:
+        _HASH_SEÑUELO = hash_password(secrets.token_urlsafe(16))
+    verify_password(plain_password, _HASH_SEÑUELO)
+    return False
+
+
 def crear_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
     """
     Crea un token JWT de acceso.
@@ -45,11 +66,21 @@ def crear_access_token(data: dict, expires_delta: Optional[timedelta] = None) ->
         Token JWT como string.
     """
     to_encode = data.copy()
-    expire = datetime.utcnow() + (
+    ahora = datetime.now(timezone.utc)
+    expire = ahora + (
         expires_delta or timedelta(minutes=settings.jwt_access_token_expire_minutes)
     )
-    to_encode.update({"exp": expire})
+    to_encode.update({"exp": expire, "iat": int(ahora.timestamp())})
     return jwt.encode(to_encode, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
+
+
+def token_de_usuario(usuario: dict) -> str:
+    """El JWT de un usuario. Lleva la fecha de su último cambio de contraseña (`cc`): al cambiarla,
+    los JWT anteriores dejan de coincidir y no valen más (exacto, sin depender del reloj)."""
+    datos = {"sub": usuario["username"]}
+    if usuario.get("clave_cambiada_en"):
+        datos["cc"] = usuario["clave_cambiada_en"]
+    return crear_access_token(data=datos)
 
 
 def decodificar_token(token: str) -> Optional[dict]:
@@ -98,6 +129,9 @@ def obtener_usuario_actual(
         return None
 
     usuario = obtener_usuario_por_username(username)
+    # Emitido antes del último cambio de contraseña (`token_de_usuario`): ya no vale.
+    if usuario and payload.get("cc") != usuario.get("clave_cambiada_en"):
+        return None
     return usuario
 
 
@@ -109,13 +143,14 @@ def _usuario_dueno() -> Optional[dict]:
     return usuarios[0] if usuarios else None
 
 
-def requerir_autenticacion(
-    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
-) -> dict:
-    """
-    Dependencia de FastAPI que REQUIERE autenticación: acepta un **JWT** (usuario) o una
-    **API key** (`dte_...`, para integraciones/agentes). Lanza HTTP 401 si no hay ninguno válido.
-    """
+def ip_cliente(request: Request) -> str:
+    """La IP de quien llama. Detrás de un proxy, uvicorn la toma de `X-Forwarded-For` solo si
+    corre con `--proxy-headers` y el proxy está en `--forwarded-allow-ips`."""
+    return request.client.host if request.client else "-"
+
+
+def _resolver(credentials: Optional[HTTPAuthorizationCredentials]) -> Optional[dict]:
+    """El usuario o token de la credencial, o None si no es válida."""
     usuario = obtener_usuario_actual(credentials)
     if usuario:
         actualizar_ultimo_acceso(usuario["id"])
@@ -133,23 +168,53 @@ def requerir_autenticacion(
         from core.apikeys import verificar_api_key
         rec = verificar_api_key(credentials.credentials)
         if rec:
-            return {"id": None, "username": f"apikey:{rec['nombre']}",
-                    "tipo": "apikey", "api_key_id": rec["id"]}
-    raise HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Se requiere un JWT o una API key válidos (Authorization: Bearer).",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
+            # La instancia es de una empresa: el token opera sobre la cuenta dueña (sus negocios,
+            # certificados y claves del SII), como la clave de la app. `id` es esa cuenta, porque
+            # las rutas del keystore la toman de ahí; quién actúa sale de `api_key_id`.
+            dueno = _usuario_dueno()
+            return {"id": dueno["id"] if dueno else None, "username": f"apikey:{rec['nombre']}",
+                    "nombre": rec["nombre"], "tipo": "apikey", "api_key_id": rec["id"], "rol": rec["rol"]}
+    return None
+
+
+def requerir_autenticacion(
+    request: Request,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+) -> dict:
+    """
+    Dependencia de FastAPI que REQUIERE autenticación: acepta un **JWT** (usuario) o una
+    **API key** (`dte_...`, para integraciones/agentes). Lanza HTTP 401 si no hay ninguno válido,
+    429 si la IP ya mandó demasiados inválidos, y 403 si un token pide algo fuera de su rol.
+    """
+    usuario = getattr(request.state, "credencial", None)
+    if usuario is None:
+        usuario = _resolver(credentials)
+        if usuario is None:
+            if credentials:
+                espera = limites.bearer_fallido(ip_cliente(request))
+                if espera:
+                    raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                                        detail="Demasiadas credenciales inválidas desde esta IP; espera y reintenta.",
+                                        headers={"Retry-After": str(espera)})
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Se requiere un JWT o una API key válidos (Authorization: Bearer).",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        request.state.credencial = usuario
+        request.state.actor = autorizacion.actor(usuario)
+    if autorizacion.es_token(usuario):
+        ruta = getattr(request.scope.get("route"), "path", request.url.path)
+        if not autorizacion.permite_integracion(request.method, ruta):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                                detail="Un token de integración no puede usar esta ruta.")
+    return usuario
 
 
 def es_administrador(usuario: Optional[dict]) -> bool:
-    """El administrador de la instancia es el usuario dueño (el primero creado, el que arma
-    `main.py` al arrancar). Una API key nunca lo es. Los roles llegan en la fase 4
-    (docs/deploy/PLAN.md); hasta entonces esta es la regla."""
-    if not usuario or usuario.get("tipo") == "apikey" or usuario.get("id") is None:
-        return False
-    dueno = _usuario_dueno()
-    return bool(dueno) and dueno["id"] == usuario["id"]
+    """Rol `administrador`: todo usuario con login (y la clave de la app, que actúa como el dueño).
+    Un token nunca lo es: su rol es `integracion` (`core/autorizacion.py`)."""
+    return bool(usuario) and not autorizacion.es_token(usuario) and usuario.get("id") is not None
 
 
 def solicitante(usuario: dict):
@@ -166,10 +231,11 @@ def solicitante(usuario: dict):
 
 
 def requerir_administrador(
+    request: Request,
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
 ) -> dict:
     """Como `requerir_autenticacion`, pero solo el administrador (403 para el resto)."""
-    usuario = requerir_autenticacion(credentials)
+    usuario = requerir_autenticacion(request, credentials)
     if not es_administrador(usuario):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
                             detail="Esta acción es solo para el administrador de la instancia.")
@@ -182,6 +248,7 @@ def _es_clave_app(credentials: Optional[HTTPAuthorizationCredentials]) -> bool:
 
 
 def requerir_clave_app(
+    request: Request,
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
 ) -> dict:
     """Solo la clave efímera de la app de escritorio (`APP_SHELL_KEY`), que actúa como el dueño.
@@ -199,20 +266,27 @@ def requerir_clave_app(
     dueno = _usuario_dueno()
     if not dueno:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="La instancia no tiene usuario dueño.")
+    request.state.actor = autorizacion.actor(dueno)
     return dueno
 
 
 def requerir_usuario(
+    request: Request,
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
 ) -> dict:
     """Como `requerir_autenticacion` pero SOLO acepta un usuario real (JWT), no API keys. Para
-    acciones sensibles como gestionar las propias API keys (que una key no cree más keys)."""
+    acciones sensibles como cambiar la propia contraseña."""
     usuario = obtener_usuario_actual(credentials)
     if not usuario:
+        from core.apikeys import verificar_api_key
+        if credentials and verificar_api_key(credentials.credentials):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                                detail="Un token de integración no puede usar esta ruta.")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Esta acción requiere un usuario autenticado (JWT), no una API key.",
             headers={"WWW-Authenticate": "Bearer"},
         )
     actualizar_ultimo_acceso(usuario["id"])
+    request.state.actor = autorizacion.actor(usuario)
     return usuario

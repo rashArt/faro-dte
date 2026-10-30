@@ -32,6 +32,16 @@ Content-Type: application/json
   "nombre": "Servicio de ejemplo"
 }
 
+### Renovar el token con que se llama (solo tokens)
+# @name renovar_propia_api_v1_apikeys_propia_renovar_post
+POST {{base}}/api/v1/apikeys/propia/renovar
+Authorization: Bearer {{token}}
+
+### Renovar una API key
+# @name renovar_api_v1_apikeys_key_id_renovar_post
+POST {{base}}/api/v1/apikeys/{{key_id}}/renovar
+Authorization: Bearer {{token}}
+
 ### Revocar una API key
 # @name revocar_api_v1_apikeys_key_id_delete
 DELETE {{base}}/api/v1/apikeys/{{key_id}}

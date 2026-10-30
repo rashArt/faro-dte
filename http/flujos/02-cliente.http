@@ -8,6 +8,13 @@
 @clave_cert = {{$dotenv FARO_CLAVE_CERT}}
 # Cambia este valor para probar una venta nueva.
 @venta = pedido-demo-1
+# url
+@base = http://127.0.0.1:8000
+@usuario = admin
+
+### api
+GET {{base}}
+Content-Type: application/json
 
 ### 1. Iniciar sesión (administrador)
 # @name login
@@ -20,7 +27,7 @@ Content-Type: application/json
 @token = {{login.response.body.access_token}}
 
 ### 2. Cargar el CAF ficticio de facturas (si ya está cargado, responde que existe)
-POST {{base}}/api/v1/db/cafs
+POST {{base}}/api/v1/caf
 Authorization: Bearer {{token}}
 Content-Type: multipart/form-data; boundary=FaroLimite
 
@@ -129,7 +136,7 @@ Content-Type: application/json
 }
 
 ### 9. Folios restantes (el 422 anterior no consumió ninguno)
-GET {{base}}/api/v1/db/cafs
+GET {{base}}/api/v1/caf
 Authorization: Bearer {{token}}
 
 ### 10. El PDF del documento emitido (con su timbre)

@@ -59,6 +59,11 @@ def dte_demo(tipo, items, receptor=None, folio=0, emisor=None, **extra):
 # `estado`, `id_externo` y `repetido` son del fork (servicio de emisión, docs/deploy/PLAN.md fase 2).
 IGNORAR_EMISION = {"dte_id", "folio", "xml_dte_path", "pdf_path", "xml_envio_path", "xml_envio_b64", "mensaje",
                    "estado", "id_externo", "repetido"}
+# Campos de los tokens que solo tiene el fork (roles y renovación, docs/deploy/PLAN.md fase 4). Las rutas
+# nuevas del fork (`/caf`, `/dte/documentos/{id}`, `/auditoria`, `/apikeys/{id}/renovar`,
+# `/auth/cambiar-clave`) no están en el contrato: Go y Rust no las tienen. `/api/v1/db/*` sigue igual,
+# ahora solo para el administrador.
+IGNORAR_TOKENS = {"rol", "renovado", "creado_por"}
 
 
 def sobre(ruta, reemplazo=None) -> str:
@@ -87,7 +92,9 @@ ESCENARIOS = {
     "auth": [
         paso("POST", "/api/v1/auth/registro", {"username": "contrato_{motor}", "password": "clave-contrato-1", "nombre_completo": "Contrato {motor}"}, ignorar={"id", "username", "mensaje"}, guarda="id"),
         paso("POST", "/api/v1/auth/registro", {"username": "contrato_{motor}", "password": "clave-contrato-1"}),
-        paso("POST", "/api/v1/auth/registro", {"username": "ab", "password": "123"}),
+        # El fork exige 12 caracteres en la contraseña con un validador propio (fase 4): el 422 es el
+        # mismo, el detalle de cada error no.
+        paso("POST", "/api/v1/auth/registro", {"username": "ab", "password": "123"}, ignorar={"detalle"}),
         paso("POST", "/api/v1/auth/registro", {"username": "sin_clave"}),
         paso("POST", "/api/v1/auth/login", {"username": "contrato_{motor}", "password": "clave-contrato-1"}, ignorar={"access_token", "username", "nombre_completo"}),
         paso("POST", "/api/v1/auth/login", {"username": "contrato_{motor}", "password": "incorrecta"}),
@@ -106,10 +113,10 @@ ESCENARIOS = {
         paso("POST", "/api/v1/apikeys", {"nombre": "con-clave-de-app"}),
         paso("POST", "/api/v1/auth/registro", {"username": "apikeys_{motor}", "password": "clave-contrato-1"}, ignorar={"id", "username", "mensaje"}, guarda="id:usuario_id"),
         paso("POST", "/api/v1/auth/login", {"username": "apikeys_{motor}", "password": "clave-contrato-1"}, ignorar={"access_token", "username"}, guarda="access_token"),
-        paso("POST", "/api/v1/apikeys", {"nombre": "contrato-{motor}"}, ignorar={"api_key", "id", "prefijo", "nombre"}, guarda="id"),
+        paso("POST", "/api/v1/apikeys", {"nombre": "contrato-{motor}"}, ignorar={"api_key", "id", "prefijo", "nombre"} | IGNORAR_TOKENS, guarda="id"),
         paso("POST", "/api/v1/apikeys", {"nombre": ""}),
         paso("POST", "/api/v1/apikeys", {}),
-        paso("GET", "/api/v1/apikeys", ignorar={"id", "nombre", "prefijo", "activo"}),
+        paso("GET", "/api/v1/apikeys", ignorar={"id", "nombre", "prefijo", "activo"} | IGNORAR_TOKENS),
         paso("DELETE", "/api/v1/apikeys/{id}", ignorar={"revocada"}),
         paso("DELETE", "/api/v1/apikeys/{id}", ignorar={"revocada"}),
         paso("DELETE", "/api/v1/apikeys/999999"),

@@ -80,6 +80,10 @@ Excepciones, siempre por nombre fijo de afuera y nunca por gusto:
 - Rutas `def` si hacen trabajo bloqueante (base, firma, disco, SII): FastAPI las corre en su pool
   de hilos. `async def` solo si no bloquean o si envuelven lo bloqueante en `run_in_threadpool`.
   Lo que compartan los hilos lleva candado.
+- Ruta nueva: decide si la usa un token `integracion`. Si sí, su prefijo va en
+  `core/autorizacion.py` (si no, el token recibe 403). Si devuelve algo de un documento, llama a
+  `exigir_documento_propio`. La protección va con `requerir_autenticacion` (o
+  `requerir_administrador`), que recibe el `Request`.
 - Configuración solo por `core.config.settings`; nada de `os.environ` en código nuevo.
 - Hora solo por `core/reloj.py`.
 - Logs en español, sin secretos, sin certificados y sin RUT reales.

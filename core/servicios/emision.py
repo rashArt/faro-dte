@@ -60,7 +60,7 @@ TIPOS_CON_REFERENCIA = (56, 61)
 @dataclass(frozen=True)
 class Solicitante:
     """Quién pide la emisión. Lo arma la ruta desde el token."""
-    origen: str                 # dueño de los `id_externo`: "usuario:<id>" o "apikey:<id>"
+    origen: str                 # dueño de los `id_externo` y del documento (`dtes.origen`): "usuario:<id>" o "apikey:<id>"
     cuenta_id: Optional[int]    # cuenta cuyos negocios y certificados se usan
     es_admin: bool              # solo el administrador elige el folio a mano (#4)
 
@@ -121,7 +121,7 @@ def emitir(dte_input: DTEInput, solicitante: Solicitante, *, id_externo: Optiona
         return _respuesta(ya.dte_id, id_externo, repetido=True)
 
     _generar(orq, dte_input, cert, reserva)
-    registrar_log(accion="emitir", tipo_dte=tipo, folio=reserva.folio, rut_emisor=dte_input.emisor.rut,
+    registrar_log(accion="emitir", actor=solicitante.origen, tipo_dte=tipo, folio=reserva.folio, rut_emisor=dte_input.emisor.rut,
                   detalle=f"dte_id={reserva.dte_id} intento={reserva.intento}"
                           + (f" id_externo={id_externo}" if id_externo else ""))
     log.info("emitido dte_id=%s tipo=%s folio=%s intento=%s", reserva.dte_id, tipo, reserva.folio,
@@ -211,8 +211,8 @@ def _reservar(dte_input: DTEInput, solicitante: Solicitante, id_externo: Optiona
                 "UPDATE dtes SET tipo_dte=?, folio=?, rut_emisor=?, rut_receptor=?, razon_social_receptor=?, "
                 "fecha_emision=?, monto_neto=?, monto_exento=?, iva=?, monto_total=?, estado='reservado', "
                 "intento=?, track_id=NULL, xml_firmado=NULL, pdf_path=NULL, motivo_error=NULL, ambiente=?, "
-                "actualizado_en=? WHERE id=?",
-                (*valores, intento, settings.sii_ambiente, ahora, dte_id))
+                "origen=?, actualizado_en=? WHERE id=?",
+                (*valores, intento, settings.sii_ambiente, solicitante.origen, ahora, dte_id))
             # Si el folio era de otra venta (su intento falló), esa venta lo pierde: su próximo
             # reintento toma otro folio.
             con.execute("UPDATE emisiones SET dte_id=NULL, actualizado_en=? WHERE dte_id=? AND id<>?",
@@ -222,8 +222,8 @@ def _reservar(dte_input: DTEInput, solicitante: Solicitante, id_externo: Optiona
             dte_id = con.execute(
                 "INSERT INTO dtes (tipo_dte, folio, rut_emisor, rut_receptor, razon_social_receptor, "
                 "fecha_emision, monto_neto, monto_exento, iva, monto_total, estado, intento, ambiente, "
-                "creado_en, actualizado_en) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'reservado', ?, ?, ?, ?)",
-                (*valores, intento, settings.sii_ambiente, ahora, ahora)).lastrowid
+                "origen, creado_en, actualizado_en) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'reservado', ?, ?, ?, ?, ?)",
+                (*valores, intento, settings.sii_ambiente, solicitante.origen, ahora, ahora)).lastrowid
 
         if emision is not None:
             con.execute("UPDATE emisiones SET huella=?, dte_id=?, actualizado_en=? WHERE id=?",

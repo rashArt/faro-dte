@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import time
 from contextvars import ContextVar
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from sqlalchemy.exc import OperationalError
@@ -369,15 +369,22 @@ def registrar_log(
     rut_emisor: Optional[str] = None,
     detalle: Optional[str] = None,
     ip_origen: Optional[str] = None,
+    actor: Optional[str] = None,
+    metodo: Optional[str] = None,
+    ruta: Optional[str] = None,
+    estado_http: Optional[int] = None,
 ) -> int:
-    """Registra una acción en el log de auditoría."""
+    """Registra una acción en el log de auditoría. `actor` es `usuario:<id>` o `apikey:<id>`
+    (fase 4 de docs/deploy/PLAN.md); nunca se guarda el cuerpo de una petición."""
     ahora = datetime.now().isoformat()
     with get_db() as conn:
         cursor = conn.execute(
             """INSERT INTO audit_log
-            (accion, tipo_dte, folio, rut_emisor, detalle, ip_origen, creado_en)
-            VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (accion, tipo_dte, folio, rut_emisor, detalle, ip_origen, ahora),
+            (accion, tipo_dte, folio, rut_emisor, detalle, ip_origen, creado_en,
+             actor, metodo, ruta, estado_http)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (accion, tipo_dte, folio, rut_emisor, detalle, ip_origen, ahora,
+             actor, metodo, ruta, estado_http),
         )
         return cursor.lastrowid
 
@@ -387,10 +394,15 @@ def listar_logs(
     rut_emisor: Optional[str] = None,
     fecha_desde: Optional[str] = None,
     limite: int = 100,
+    actor: Optional[str] = None,
 ) -> list[dict]:
     """Lista logs de auditoría con filtros."""
     condiciones = []
     params = []
+
+    if actor:
+        condiciones.append("actor=?")
+        params.append(actor)
 
     if accion:
         condiciones.append("accion=?")
@@ -451,6 +463,15 @@ def listar_usuarios() -> list[dict]:
     """Lista todos los usuarios activos."""
     rows = obtener_todos("SELECT id, username, nombre_completo, email, activo, creado_en, ultimo_acceso FROM usuarios WHERE activo=1")
     return [dict(r) for r in rows]
+
+
+def cambiar_clave_usuario(user_id: int, hashed_password: str) -> str:
+    """Guarda la contraseña nueva y la fecha del cambio: los JWT emitidos antes dejan de valer
+    (`core.auth`). Devuelve esa fecha."""
+    ahora = datetime.now(timezone.utc).isoformat()
+    ejecutar("UPDATE usuarios SET hashed_password=?, clave_cambiada_en=? WHERE id=?",
+             (hashed_password, ahora, user_id))
+    return ahora
 
 
 def desactivar_usuario(user_id: int) -> bool:

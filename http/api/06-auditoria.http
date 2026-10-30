@@ -1,0 +1,23 @@
+# Auditoría — Faro API (motor Python)
+# GENERADO por tools/generar_http.py desde /openapi.json. No editar a mano: regenerar.
+# Requiere la extensión REST Client (humao.rest-client) y el entorno "local" (abajo a la
+# derecha en VS Code, o Ctrl+Alt+E). Claves en http/.env (copia http/env.ejemplo).
+
+@clave = {{$dotenv FARO_CLAVE}}
+@clave_cert = {{$dotenv FARO_CLAVE_CERT}}
+
+### Iniciar sesión (ejecuta esto primero; el token dura 60 min)
+# @name login
+POST {{base}}/api/v1/auth/login
+Content-Type: application/json
+
+{"username": "{{usuario}}", "password": "{{clave}}"}
+
+###
+@token = {{login.response.body.access_token}}
+
+### Quién hizo qué, del más reciente al más antiguo
+# opcionales: actor=<actor>, accion=<accion>, rut_emisor=77777777-7, fecha_desde=<fecha_desde>, limite=100
+# @name consultar_api_v1_auditoria_get
+GET {{base}}/api/v1/auditoria
+Authorization: Bearer {{token}}

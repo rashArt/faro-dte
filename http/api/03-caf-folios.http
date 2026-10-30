@@ -5,6 +5,8 @@
 
 @clave = {{$dotenv FARO_CLAVE}}
 @clave_cert = {{$dotenv FARO_CLAVE_CERT}}
+@rut_emisor = 1
+@tipo_dte = 1
 
 ### Iniciar sesión (ejecuta esto primero; el token dura 60 min)
 # @name login
@@ -39,3 +41,32 @@ Content-Type: application/json
   "caf_xml_b64": "<caf_xml_b64>",
   "folio": 0
 }
+
+### Listar CAF registrados
+# opcionales: rut_emisor=77777777-7, tipo_dte=33
+# @name get_cafs_api_v1_caf_get
+GET {{base}}/api/v1/caf
+Authorization: Bearer {{token}}
+
+### Registrar un CAF subiendo el XML del SII
+# @name post_registrar_caf_api_v1_caf_post
+POST {{base}}/api/v1/caf
+Authorization: Bearer {{token}}
+Content-Type: multipart/form-data; boundary=FaroLimite
+
+--FaroLimite
+Content-Disposition: form-data; name="archivo"; filename="caf_33.xml"
+Content-Type: application/octet-stream
+
+< ../../tests/dorado/fixtures/caf_33.xml
+--FaroLimite--
+
+### CAF activo de un emisor y tipo
+# @name get_caf_activo_api_v1_caf_activo_rut_emisor_tipo_dte_get
+GET {{base}}/api/v1/caf/activo/{{rut_emisor}}/{{tipo_dte}}
+Authorization: Bearer {{token}}
+
+### Siguiente folio disponible
+# @name get_siguiente_folio_api_v1_caf_folios_siguiente_rut_emisor_t
+GET {{base}}/api/v1/caf/folios/siguiente/{{rut_emisor}}/{{tipo_dte}}
+Authorization: Bearer {{token}}

@@ -72,10 +72,12 @@ Protección **a nivel de router** en `main.py` (todo el router, no endpoint por 
 - `certificado`, `caf`, `dte`, `status`
 
 Protección **por endpoint** (además de los routers de arriba):
-- `GET /api/v1/db/dtes` - Listar DTEs
-- `GET /api/v1/db/cafs` - Listar CAFs
-- `GET /api/v1/db/folios/siguiente/{rut}/{tipo}` - Siguiente folio disponible
-- `GET /api/v1/db/logs` - Logs de auditoría
+- `GET /api/v1/dte/documentos` - Listar DTEs (antes `/api/v1/db/dtes`)
+- `GET /api/v1/caf` - Listar CAFs (antes `/api/v1/db/cafs`)
+- `GET /api/v1/caf/folios/siguiente/{rut}/{tipo}` - Siguiente folio disponible
+- `GET /api/v1/auditoria` - Auditoría, solo administrador (antes `/api/v1/db/logs`)
+- `/api/v1/db/*` sigue como alias obsoleto, solo administrador (Go y Rust lo sirven); roles y
+  permisos del token en `core/autorizacion.py` (fase 4 de `docs/deploy/PLAN.md`)
 - `GET /api/v1/auth/usuarios` - Listar usuarios
 - `DELETE /api/v1/auth/usuarios/{id}` - Desactivar usuario
 

@@ -48,6 +48,17 @@ Authorization: Bearer {{token}}
 DELETE {{base}}/api/v1/auth/usuarios/{{user_id}}
 Authorization: Bearer {{token}}
 
+### Cambiar la propia contraseña
+# @name cambiar_clave_api_v1_auth_cambiar_clave_post
+POST {{base}}/api/v1/auth/cambiar-clave
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "clave_actual": "<clave_actual>",
+  "clave_nueva": "<clave_nueva>"
+}
+
 ### Obtener información del usuario actual
 # @name obtener_perfil_api_v1_auth_me_get
 GET {{base}}/api/v1/auth/me

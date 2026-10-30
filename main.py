@@ -27,10 +27,11 @@ from core.datos import url_segura
 from core.folios_auto import programador_folios
 from core.scheduler import programador
 from core.models import obtener_usuario_por_username, crear_usuario, listar_usuarios
-from core.auth import hash_password, requerir_autenticacion
+from core.auth import hash_password, requerir_administrador, requerir_autenticacion
 
-from api.routes import certificado, caf, dte, status, auth, db, keystore, onboarding, monitoreo, consulta, apikeys, mipyme, simulacion, valores
+from api.routes import certificado, caf, dte, status, auth, auditoria, db, keystore, onboarding, monitoreo, consulta, apikeys, mipyme, simulacion, valores
 from api.errors import registrar_manejo_errores
+from api import auditoria as auditoria_peticiones
 
 
 # ---- Logging ----
@@ -219,6 +220,8 @@ async def _acotar_dominio_publico(request: Request, call_next):
 
 # ---- Manejo de errores uniforme + request-id + logging de acceso ----
 registrar_manejo_errores(app)
+# ---- Auditoría: quién hizo qué (POST/PUT/PATCH/DELETE en /api/), fase 4 de docs/deploy/PLAN.md ----
+auditoria_peticiones.instalar(app)
 
 # ---- Registrar routers ----
 app.include_router(auth.router)
@@ -228,7 +231,10 @@ app.include_router(certificado.router, dependencies=_PROTEGIDO)
 app.include_router(caf.router, dependencies=_PROTEGIDO)
 app.include_router(dte.router, dependencies=_PROTEGIDO)
 app.include_router(status.router, dependencies=_PROTEGIDO)
-app.include_router(db.router)
+# `/api/v1/db/*` es el alias obsoleto de `/dte/documentos`, `/caf` y `/auditoria` (fase 4): solo el
+# administrador y fuera de /docs. Sigue porque Go y Rust lo sirven y el contrato lo compara.
+app.include_router(db.router, dependencies=[Depends(requerir_administrador)], include_in_schema=False)
+app.include_router(auditoria.router)
 app.include_router(keystore.router)
 app.include_router(onboarding.router)
 app.include_router(apikeys.router)

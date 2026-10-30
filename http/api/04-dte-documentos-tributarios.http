@@ -18,7 +18,7 @@ Content-Type: application/json
 @token = {{login.response.body.access_token}}
 
 ### Últimos documentos emitidos (folio, estado, TrackID)
-# opcionales: limite=25, tipo_dte=33, estado=<estado>, rut_emisor=77777777-7
+# opcionales: limite=25, tipo_dte=33, estado=<estado>, rut_emisor=77777777-7, fecha_desde=<fecha_desde>, fecha_hasta=<fecha_hasta>, offset=0
 # @name listar_documentos_api_v1_dte_documentos_get
 GET {{base}}/api/v1/dte/documentos
 Authorization: Bearer {{token}}
@@ -31,6 +31,19 @@ Authorization: Bearer {{token}}
 ### Empresas emisoras presentes en la BD (para filtrar)
 # @name emisores_documentos_api_v1_dte_documentos_emisores_get
 GET {{base}}/api/v1/dte/documentos/emisores
+Authorization: Bearer {{token}}
+
+### Buscar un documento por emisor, tipo y folio
+# @name buscar_documento_api_v1_dte_documentos_buscar_get
+GET {{base}}/api/v1/dte/documentos/buscar
+    ?rut_emisor=77777777-7
+    &tipo_dte=33
+    &folio=0
+Authorization: Bearer {{token}}
+
+### Un documento por su id
+# @name obtener_documento_api_v1_dte_documentos_dte_id_get
+GET {{base}}/api/v1/dte/documentos/{{dte_id}}
 Authorization: Bearer {{token}}
 
 ### PDF de un documento (motor o canal MIPYME)

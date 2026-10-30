@@ -144,6 +144,11 @@ class Settings(BaseSettings):
     emision_plazo_reserva_min: int = Field(default=10, description="Minutos tras los que una reserva de folio huérfana se reusa")
     # Caché compartida (docs/deploy/PLAN.md, fase 3): token del SII. Sin ella, memoria del proceso.
     redis_url: Optional[str] = Field(default=None, description="Redis opcional para la caché (REDIS_URL), p. ej. redis://redis:6379/0")
+    # Límites de acceso (docs/deploy/PLAN.md, fase 4). Contadores en la caché de arriba.
+    login_max_fallos: int = Field(default=5, description="Logins fallidos por usuario+IP antes del bloqueo")
+    login_bloqueo_min: int = Field(default=15, description="Minutos de bloqueo tras los logins fallidos")
+    bearer_max_fallos: int = Field(default=20, description="Bearer inválidos por IP antes de responder 429")
+    clave_largo_minimo: int = Field(default=12, description="Largo mínimo de una contraseña nueva")
 
     # ---- Exposición pública acotada ----
     # Host público que SOLO puede ver el buscador de boletas (ej. "boletas.tu-dominio.cl").

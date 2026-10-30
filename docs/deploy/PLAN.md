@@ -1,6 +1,6 @@
 # Plan del fork: Faro como API de facturación para productos
 
-> **Estado (2026-10-29):** fases 0 a 3 hechas; lo demás, pendiente salvo lo marcado ✅. Rama de
+> **Estado (2026-10-30):** fases 0 a 4 hechas; lo demás, pendiente salvo lo marcado ✅. Rama de
 > trabajo: `servidor-produccion`. Los hallazgos están **verificados en vivo** contra la imagen
 > Docker del motor Python (`tools/sondeo_integridad.py`).
 >
@@ -196,11 +196,66 @@ los scripts siguen con `core/orchestrator.py::emitir_documento`, sin cambios.
 - ✅ Verificación: suite 35 + 6 omitidas en SQLite sin Redis, 41 en PostgreSQL 17 con Redis;
   `test_dorado` 15/15; `sondeo_integridad` contra la imagen: 0 hallazgos.
 - Pendiente para cuando haya réplicas (roadmap): candado de líder para el RVD y la reposición
-  de folios, y límite de intentos de login en la caché.
+  de folios. (El límite de intentos de login llegó en la fase 4.)
 
-### Fase 4 — Autenticación mínima
-- Tokens de integración ligados a la cuenta del administrador, con rol `integracion`.
-  Migración `0003`.
+### Fase 4 — Roles, tokens, auditoría y rutas sin `/db` ✅ (2026-10-30)
+Una empresa por despliegue: no hay entidad central ni tabla de productos.
+- ✅ **Dos roles** (`core/autorizacion.py`). `administrador`: los usuarios con login (JWT) y la
+  clave de la app; hacen todo. `integracion`: los tokens `dte_…` de cada sistema que llama a la
+  API (punto de venta, tienda, ERP). El token emite, envía, consulta y gestiona certificados,
+  negocios, claves del SII, CAF y folios, sobre la **cuenta dueña** (el primer usuario, como la
+  clave de la app). Recibe `403` en usuarios, tokens (salvo renovar el suyo), auditoría, listado
+  general de documentos, `/db/*`, `simulacion`, `mipyme` y `onboarding`. La lista de lo
+  permitido es una sola (`PERMITIDO_INTEGRACION`, por prefijo de la plantilla de la ruta): lo
+  que no está queda negado. La revisa `requerir_autenticacion`, que ahora recibe el `Request`.
+- ✅ **Cada token ve solo lo suyo.** `dtes.origen` guarda quién emitió (`usuario:<id>` o
+  `apikey:<id>`, el mismo formato que el `origen` de `emisiones`). `/dte/documentos/{id}`, su
+  PDF, su XML y `/dte/documentos/buscar` responden `404` al token que no lo emitió (no revela
+  que existe). Lo emitido por otras rutas o antes de esta fase tiene `origen` NULL: solo el
+  administrador lo ve.
+- ✅ **Tokens sin vencimiento, renovables.** Renovar (`POST /apikeys/{id}/renovar`, el
+  administrador; `POST /apikeys/propia/renovar`, el token mismo) cambia el secreto y conserva el
+  `id`: su `id_externo` y su rastro en la auditoría siguen. La clave anterior muere al instante,
+  igual que al revocar; no hay plazo de gracia. Crear, listar, renovar y revocar exigen un
+  usuario con login (ni un token ni la clave de la app, como en Go). `GET /auth/me` con un token
+  responde su id, nombre y rol. `ultimo_uso` se escribe como mucho una vez por minuto.
+- ✅ **Rutas sin `/db`.** Pasan a su dominio, con la misma implementación:
+
+  | Antes | Ahora |
+  |---|---|
+  | `GET /db/dtes` | `GET /dte/documentos` (ya existía; suma `fecha_desde`, `fecha_hasta` y `offset`) |
+  | `GET /db/dtes/{id}` | `GET /dte/documentos/{id}` |
+  | `GET /db/dtes/buscar/{rut}/{tipo}/{folio}` | `GET /dte/documentos/buscar?rut_emisor=&tipo_dte=&folio=` |
+  | `GET /db/cafs` · `POST /db/cafs` | `GET /caf` · `POST /caf` |
+  | `GET /db/cafs/activo/{rut}/{tipo}` | `GET /caf/activo/{rut}/{tipo}` |
+  | `GET /db/folios/siguiente/{rut}/{tipo}` | `GET /caf/folios/siguiente/{rut}/{tipo}` |
+  | `GET /db/logs` | `GET /auditoria` (suma el filtro `actor`) |
+
+  `/db/*` queda como alias **obsoleto, solo para el administrador y fuera de `/docs`**: Go y Rust
+  la siguen sirviendo y `tools/contrato_api.py` la compara. Las rutas nuevas son solo de Python.
+- ✅ **Auditoría de quién hace qué** (`api/auditoria.py`). `audit_log` suma `actor`, `metodo`,
+  `ruta` (la plantilla) y `estado_http`. Se registra toda petición a `/api/` con `POST`, `PUT`,
+  `PATCH` o `DELETE`, y todo login (`login`, `login_fallido`, `login_bloqueado`, con el usuario
+  intentado). Nunca el cuerpo. La emisión anota además su `actor`.
+- ✅ **Seguridad común** (`core/limites.py`, contadores en la caché de la fase 3, memoria o
+  Redis, con las claves en hash). Login: 5 fallos por usuario+IP bloquean 15 minutos
+  (`LOGIN_MAX_FALLOS`, `LOGIN_BLOQUEO_MIN`); `429` con `Retry-After`, incluso con la contraseña
+  correcta, y los demás usuarios siguen entrando. Mismo mensaje y mismo tiempo exista o no el
+  usuario (hash señuelo). Bearer inválidos: pasados 20 por IP (`BEARER_MAX_FALLOS`), los inválidos
+  responden `429`; los válidos pasan siempre (un token de 256 bits no se adivina, y bloquear la IP
+  cortaría a los demás sistemas que salen por ella). Contraseña nueva de 12 caracteres como
+  mínimo (`CLAVE_LARGO_MINIMO`). `POST /auth/cambiar-clave` invalida los JWT anteriores: el JWT
+  lleva la fecha del último cambio (`cc`) y deja de coincidir. Las respuestas de error conservan
+  `WWW-Authenticate` y `Retry-After` (antes el manejador las perdía).
+- ✅ **Migración `0003`:** `api_keys.rol`, `creado_por` y `renovado`; `audit_log.actor`, `metodo`,
+  `ruta`, `estado_http` (con índice por `actor`); `usuarios.clave_cambiada_en`; `dtes.origen`. Los
+  tokens existentes quedan `integracion`. Probada de subida y de bajada en SQLite y PostgreSQL, y
+  sobre la base local con datos (0002 → 0003).
+- ✅ Verificación: suite 67 + 6 omitidas en SQLite sin Redis, 73 en PostgreSQL 17 con Redis
+  (`tests/api/test_autorizacion.py`: matriz de permisos, documentos propios, renovar y revocar,
+  login, contraseña, Bearer y auditoría); `test_dorado` 15/15 local y en la imagen;
+  `sondeo_integridad` contra la imagen: 0 hallazgos (sección 7 nueva: roles y límites).
+- Fuera de esta fase: la pantalla `/apikeys` (UI local) no tiene botón de renovar; la ruta sí.
 
 ### Fase 5 — API para productos (se suma a lo existente)
 - `emitir` y `previsualizar` con emisor opcional (lo toma del negocio).

@@ -55,6 +55,15 @@ def _sin_red(monkeypatch):
     monkeypatch.setattr(core.negocios, "info_empresa", ficha)
 
 
+@pytest.fixture(autouse=True)
+def _cache_limpia():
+    """Cada prueba parte sin contadores de intentos fallidos ni tokens del SII en caché."""
+    from core.adaptadores import cache
+    cache.reiniciar()
+    yield
+    cache.reiniciar()
+
+
 @pytest.fixture(scope="session")
 def cliente():
     """La app completa con su arranque (`lifespan`): crea el esquema y el usuario admin.
@@ -92,7 +101,7 @@ def instancia(cliente, admin):
         shutil.rmtree(TMP / "storage" / sub, ignore_errors=True)
     for tipo in (33, 56, 61):
         with open(FIXTURES / f"caf_{tipo}.xml", "rb") as f:
-            r = cliente.post("/api/v1/db/cafs", headers=admin, files={"archivo": (f"caf_{tipo}.xml", f, "text/xml")})
+            r = cliente.post("/api/v1/caf", headers=admin, files={"archivo": (f"caf_{tipo}.xml", f, "text/xml")})
         assert r.status_code in (200, 201), r.text
     return cliente
 
