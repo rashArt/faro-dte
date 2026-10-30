@@ -17,7 +17,8 @@ from core.auth import requerir_autenticacion
 from core.crypto import CertificadoDigital
 from core.errors import CertificadoError, SIIError
 from core.seguimiento import estados_lote
-from core.sii import AmbienteSII, ClienteSII
+from core.adaptadores.sii import ClienteFacturas
+from core.sii import AmbienteSII
 
 router = APIRouter(prefix="/api/v1/estado", tags=["Estado DTE en SII"])
 
@@ -80,7 +81,7 @@ class ConsultarDTEResponse(BaseModel):
     - `FOK`: En proceso (esperando resultado).
     """,
 )
-async def consultar_estado_track(body: ConsultarTrackRequest) -> ConsultarTrackResponse:
+def consultar_estado_track(body: ConsultarTrackRequest) -> ConsultarTrackResponse:
     """Consulta el estado de un envío de DTE por TrackID."""
     try:
         cert_bytes = base64.b64decode(body.certificado_p12_b64)
@@ -89,8 +90,8 @@ async def consultar_estado_track(body: ConsultarTrackRequest) -> ConsultarTrackR
         raise CertificadoError(f"No se pudo cargar el certificado: {e}")
 
     try:
-        cliente = ClienteSII(cert, body.ambiente)
-        resultado = cliente.consultar_estado_track(body.track_id, body.rut_empresa, body.dv_empresa)
+        with ClienteFacturas(cert, body.ambiente) as cliente:
+            resultado = cliente.consultar_estado_track(body.track_id, body.rut_empresa, body.dv_empresa)
     except Exception as e:
         raise SIIError(f"Error al consultar el SII: {e}")
 
@@ -111,7 +112,7 @@ class EstadoLoteRequest(BaseModel):
 
 
 @router.post("/lote", summary="Estado de varios envíos por TrackID (con resumen)")
-async def consultar_estado_lote(
+def consultar_estado_lote(
     body: EstadoLoteRequest,
     usuario: dict = Depends(requerir_autenticacion),
 ) -> dict:
@@ -121,11 +122,8 @@ async def consultar_estado_lote(
     cert = keystore.cargar_certificado(body.cert_id, usuario["id"])
     num, dv = (body.rut_empresa.split("-") if "-" in body.rut_empresa
                else (body.rut_empresa, ""))
-    cliente = ClienteSII(cert, body.ambiente)
-    try:
+    with ClienteFacturas(cert, body.ambiente) as cliente:
         return estados_lote(cliente, body.track_ids, num, dv)
-    finally:
-        cliente.close()
 
 
 @router.post(
@@ -139,7 +137,7 @@ async def consultar_estado_lote(
     Útil para verificar si el SII tiene registrado y aceptado un documento específico.
     """,
 )
-async def consultar_estado_dte(body: ConsultarDTERequest) -> ConsultarDTEResponse:
+def consultar_estado_dte(body: ConsultarDTERequest) -> ConsultarDTEResponse:
     """Consulta el estado de un DTE específico en el SII."""
     try:
         cert_bytes = base64.b64decode(body.certificado_p12_b64)
@@ -148,7 +146,7 @@ async def consultar_estado_dte(body: ConsultarDTERequest) -> ConsultarDTERespons
         raise CertificadoError(f"No se pudo cargar el certificado: {e}")
 
     try:
-        cliente = ClienteSII(cert, body.ambiente)
+        cliente = ClienteFacturas(cert, body.ambiente)
         resultado = cliente.consultar_estado_dte(
             rut_emisor=body.rut_emisor,
             dv_emisor=body.dv_emisor,

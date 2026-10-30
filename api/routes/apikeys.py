@@ -20,7 +20,7 @@ class CrearKeyRequest(BaseModel):
 
 
 @router.post("", status_code=status.HTTP_201_CREATED, summary="Crear una API key")
-async def crear(body: CrearKeyRequest, usuario: dict = Depends(requerir_usuario)) -> dict:
+def crear(body: CrearKeyRequest, usuario: dict = Depends(requerir_usuario)) -> dict:
     """Crea una API key nueva. Devuelve la clave en claro **una sola vez** — guárdala ya."""
     clave, reg = apikeys.crear_api_key(body.nombre.strip())
     return {"api_key": clave,
@@ -28,13 +28,13 @@ async def crear(body: CrearKeyRequest, usuario: dict = Depends(requerir_usuario)
 
 
 @router.get("", summary="Listar API keys")
-async def listar(usuario: dict = Depends(requerir_usuario)) -> list:
+def listar(usuario: dict = Depends(requerir_usuario)) -> list:
     """Lista las keys (sin exponer la clave: solo el prefijo, estado y uso)."""
     return apikeys.listar_api_keys()
 
 
 @router.delete("/{key_id}", summary="Revocar una API key")
-async def revocar(key_id: int, usuario: dict = Depends(requerir_usuario)) -> dict:
+def revocar(key_id: int, usuario: dict = Depends(requerir_usuario)) -> dict:
     if not apikeys.revocar_api_key(key_id):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "API key no encontrada")
     return {"revocada": key_id}

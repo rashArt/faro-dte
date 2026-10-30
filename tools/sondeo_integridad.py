@@ -26,6 +26,7 @@ import os
 import sqlite3
 import sys
 import threading
+import time
 from pathlib import Path
 
 import httpx
@@ -140,6 +141,19 @@ def main() -> int:
     s, j = emitir(c)
     veredicto(s == 422 and siguiente() == antes, f"respuesta {s}, folio_siguiente {antes} -> {siguiente()} "
               "(esperado 422 sin consumir folio)")
+
+    print("\n6. /health con 8 emisiones en paralelo (event loop libre, #12)")
+    hilos = [threading.Thread(target=lambda i=i: emitir(cuerpo(f"Carga {i}"))) for i in range(8)]
+    [t.start() for t in hilos]
+    tiempos = []
+    while any(t.is_alive() for t in hilos):
+        inicio = time.perf_counter()
+        httpx.get(f"{B}/health", timeout=30)
+        tiempos.append((time.perf_counter() - inicio) * 1000)
+        time.sleep(0.02)
+    [t.join() for t in hilos]
+    veredicto(bool(tiempos) and max(tiempos) < 500,
+              f"/health: {len(tiempos)} consultas, máximo {max(tiempos):.0f} ms (antes de la fase 3: 1.533 ms)")
 
     print(f"\n{len(hallazgos)} hallazgo(s).")
     return 1 if hallazgos else 0

@@ -11,10 +11,11 @@ uniforme con la traza en el log. No hay `except Exception → HTTPException` ad-
 
 import base64
 import json
+import logging
 from typing import Annotated, List, Optional
 
 from fastapi import APIRouter, Depends, File, Form, UploadFile
-from api.util import leer_upload
+from api.util import leer_upload_sincrono
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
@@ -29,9 +30,10 @@ from core.orchestrator import ruta_desde_bd
 from core.servicios import emision
 from core.pdf_gen import generar_pdf_dte
 from core.preview import previsualizar_dte as _previsualizar_dte
-from core.sii import AmbienteSII, ClienteSII
+from core.adaptadores.sii import ClienteFacturas
+from core.sii import AmbienteSII
 from core import keystore
-from core.models import listar_dtes, obtener_caf_activo, obtener_dte
+from core.models import listar_dtes, marcar_enviados_por_xml, obtener_caf_activo, obtener_dte
 
 router = APIRouter(prefix="/api/v1/dte", tags=["DTE - Documentos Tributarios"])
 
@@ -107,7 +109,7 @@ def _parse_dte_input(dte_json: str) -> DTEInput:
 # ---- Endpoints ----
 
 @router.get("/documentos", summary="Últimos documentos emitidos (folio, estado, TrackID)")
-async def listar_documentos(
+def listar_documentos(
     limite: int = 25,
     tipo_dte: Optional[int] = None,
     estado: Optional[str] = None,
@@ -131,7 +133,7 @@ async def listar_documentos(
 
 
 @router.get("/emisor", summary="Datos del emisor configurado en el motor (EMPRESA_* del .env)")
-async def emisor_configurado() -> dict:
+def emisor_configurado() -> dict:
     """Los datos fijos del emisor que el motor usa para armar un DTE (giro, código de actividad,
     dirección). Son los de `.env` (`EMPRESA_*`). La app de escritorio los lee para no pedirlos
     en cada emisión; `configurada` es False si faltan RUT o razón social."""
@@ -146,7 +148,7 @@ async def emisor_configurado() -> dict:
 
 
 @router.get("/documentos/emisores", summary="Empresas emisoras presentes en la BD (para filtrar)")
-async def emisores_documentos() -> dict:
+def emisores_documentos() -> dict:
     """RUT emisor distinto con cuántos documentos tiene y su razón social si está registrada
     como negocio. Sirve para que la vista de documentos no mezcle empresas."""
     from core.database import obtener_todos
@@ -163,7 +165,7 @@ async def emisores_documentos() -> dict:
 
 
 @router.get("/documentos/{dte_id}/pdf", summary="PDF de un documento (motor o canal MIPYME)")
-async def pdf_documento(dte_id: int) -> Response:
+def pdf_documento(dte_id: int) -> Response:
     """Sirve el PDF guardado en disco (el del motor, o el que bajó el importador MIPYME)."""
     from pathlib import Path
     from core.errors import RecursoNoEncontrado
@@ -181,7 +183,7 @@ async def pdf_documento(dte_id: int) -> Response:
 
 
 @router.post("/documentos/{dte_id}/pdf", summary="(Re)generar el PDF de un documento desde su XML firmado")
-async def regenerar_pdf_documento(dte_id: int) -> dict:
+def regenerar_pdf_documento(dte_id: int) -> dict:
     """Para documentos que tienen XML pero no PDF: los que emite el núcleo en Go (que no hace
     PDF) o los importados. Reconstruye la entrada desde el XML (`core/dte_xml.py`), dibuja el
     PDF con el TED original y guarda la ruta. Boletas (39/41) salen en formato 80 mm."""
@@ -211,7 +213,7 @@ async def regenerar_pdf_documento(dte_id: int) -> dict:
 
 
 @router.get("/documentos/{dte_id}/xml", summary="XML firmado de un documento")
-async def xml_documento(dte_id: int) -> Response:
+def xml_documento(dte_id: int) -> Response:
     """El XML firmado tal como se guardó (ISO-8859-1). Los importados del historial MIPYME
     no lo tienen: el portal solo entregó el PDF."""
     from core.errors import RecursoNoEncontrado
@@ -226,7 +228,7 @@ async def xml_documento(dte_id: int) -> Response:
 
 @router.post("/generar", response_model=GenerarDTEResponse,
              summary="Generar un DTE (XML estructurado y firmado)")
-async def generar_dte(
+def generar_dte(
     dte_json: Annotated[str, Form(description="Datos del DTE en JSON (modelo DTEInput)")],
     certificado_p12: Annotated[UploadFile, File(description="Archivo .p12 del certificado")],
     password_certificado: Annotated[str, Form(description="Contraseña del certificado")],
@@ -234,13 +236,13 @@ async def generar_dte(
 ) -> GenerarDTEResponse:
     """Genera y firma un DTE completo (con TED si se provee el CAF)."""
     dte_input = _parse_dte_input(dte_json)
-    cert = _cargar_cert(await leer_upload(certificado_p12), password_certificado)
+    cert = _cargar_cert(leer_upload_sincrono(certificado_p12), password_certificado)
 
     # CAF opcional → TED
     ted_xml: Optional[str] = None
     if caf_xml and caf_xml.filename:
         try:
-            caf_manejador = ManejadorCAF(await leer_upload(caf_xml))
+            caf_manejador = ManejadorCAF(leer_upload_sincrono(caf_xml))
         except Exception as e:
             raise CAFError(f"No se pudo procesar el CAF: {e}")
         if caf_manejador.datos.tipo_dte != dte_input.tipo_dte.value:
@@ -278,7 +280,7 @@ async def generar_dte(
 
 @router.post("/generar-simple", response_model=GenerarDTEResponse,
              summary="Generar DTE desde JSON (sin archivos, para pruebas)")
-async def generar_dte_simple(body: DTEInput) -> GenerarDTEResponse:
+def generar_dte_simple(body: DTEInput) -> GenerarDTEResponse:
     """Genera un DTE sin firma real (para desarrollo y pruebas estructurales)."""
     generador = GeneradorDTE()
     dte_elem = generador.generar_documento_xml(body, ted_xml=None)
@@ -291,7 +293,7 @@ async def generar_dte_simple(body: DTEInput) -> GenerarDTEResponse:
 
 
 @router.post("/enviar", response_model=EnviarDTEResponse, summary="Enviar DTE firmado al SII")
-async def enviar_dte(body: EnviarDTERequest) -> EnviarDTEResponse:
+def enviar_dte(body: EnviarDTERequest) -> EnviarDTEResponse:
     """Envía un EnvioDTE firmado al SII y retorna el TrackID."""
     from core.schema_validator import validar_xml_dte_strict
 
@@ -306,10 +308,11 @@ async def enviar_dte(body: EnviarDTERequest) -> EnviarDTEResponse:
         raise ValidacionError(f"El XML no cumple el esquema XSD del SII: {e}")
 
     try:
-        cliente = ClienteSII(cert, body.ambiente)
-        track_id, mensaje = cliente.enviar_dte(
-            xml_bytes, rut_empresa=body.rut_empresa, dv_empresa=body.dv_empresa,
-            tipo_dte=body.tipo_dte)
+        # Token compartido entre peticiones (#13); el cliente no escribe en la base.
+        with ClienteFacturas(cert, body.ambiente) as cliente:
+            track_id, mensaje = cliente.enviar_dte(
+                xml_bytes, rut_empresa=body.rut_empresa, dv_empresa=body.dv_empresa,
+                tipo_dte=body.tipo_dte)
     except ValueError as e:
         raise SIIRechazoError(f"El SII rechazó el documento: {e}")
     except SIIError:
@@ -317,12 +320,17 @@ async def enviar_dte(body: EnviarDTERequest) -> EnviarDTEResponse:
     except Exception as e:
         raise SIIError(f"Error de comunicación con el SII: {e}")
 
+    # El envío ya fue exitoso: marcar los documentos del sobre es best-effort, como antes.
+    try:
+        marcar_enviados_por_xml(xml_bytes, track_id, ambiente=body.ambiente.value)
+    except Exception:
+        logging.getLogger("dte.sii").warning("Envío OK (TrackID %s) pero no se pudo actualizar la BD", track_id)
     return EnviarDTEResponse(track_id=track_id, mensaje=mensaje, ambiente=body.ambiente.value)
 
 
 @router.post("/validar-xml", response_model=ValidarXMLResponse,
              summary="Validar XML del DTE contra el esquema XSD oficial del SII")
-async def validar_xml(body: ValidarXMLRequest) -> ValidarXMLResponse:
+def validar_xml(body: ValidarXMLRequest) -> ValidarXMLResponse:
     """Valida un XML (DTE o EnvioDTE) contra los esquemas XSD del SII."""
     from core.schema_validator import validar_xml_dte
 
@@ -336,7 +344,7 @@ async def validar_xml(body: ValidarXMLRequest) -> ValidarXMLResponse:
 
 @router.post("/pdf", summary="Generar PDF de la representación gráfica del DTE",
              response_class=Response)
-async def generar_pdf(
+def generar_pdf(
     dte_json: Annotated[str, Form(description="Datos del DTE en JSON")],
     ted_xml: Annotated[Optional[str], Form(description="XML del TED (opcional)")] = None,
 ) -> Response:
@@ -349,7 +357,7 @@ async def generar_pdf(
 
 
 @router.post("/pdf-simple", summary="Generar PDF desde JSON directo", response_class=Response)
-async def generar_pdf_simple(body: DTEInput) -> Response:
+def generar_pdf_simple(body: DTEInput) -> Response:
     """Genera el PDF del DTE recibiendo el DTEInput como JSON en el body."""
     pdf_bytes = generar_pdf_dte(body, ted_xml=None)
     filename = f"DTE-{body.tipo_dte.value}-{body.folio}.pdf"
@@ -393,7 +401,7 @@ class PrevisualizarRequest(BaseModel):
 
 
 @router.post("/previsualizar", summary="Previsualizar un DTE (firmado+timbrado+PDF) sin enviarlo")
-async def previsualizar(
+def previsualizar(
     body: PrevisualizarRequest,
     usuario: dict = Depends(requerir_autenticacion),
 ) -> dict:
@@ -412,7 +420,7 @@ async def previsualizar(
 
 
 @router.post("/emitir", response_model=EmitirDTEResponse, summary="Emitir DTE de forma orquestada")
-async def emitir_dte_orquestado(
+def emitir_dte_orquestado(
     body: EmitirDTERequest,
     usuario: dict = Depends(requerir_autenticacion),
 ) -> EmitirDTEResponse:

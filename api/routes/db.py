@@ -13,7 +13,7 @@ from __future__ import annotations
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Query, UploadFile, File
-from api.util import leer_upload
+from api.util import leer_upload_sincrono
 from pydantic import BaseModel, Field
 
 from core.auth import requerir_autenticacion
@@ -103,7 +103,7 @@ class RegistrarCAFRequest(BaseModel):
 # ---- Endpoints DTEs ----
 
 @router.get("/dtes", response_model=DTEListResponse, summary="Listar DTEs emitidos")
-async def get_dtes(
+def get_dtes(
     rut_emisor: Optional[str] = Query(None, description="Filtrar por RUT emisor"),
     tipo_dte: Optional[int] = Query(None, description="Filtrar por tipo DTE"),
     estado: Optional[str] = Query(None, description="Filtrar por estado"),
@@ -132,7 +132,7 @@ async def get_dtes(
 
 
 @router.get("/dtes/{dte_id}", response_model=DTEResponse, summary="Obtener DTE por ID")
-async def get_dte(
+def get_dte(
     dte_id: int,
     usuario: dict = Depends(requerir_autenticacion),
 ) -> DTEResponse:
@@ -148,7 +148,7 @@ async def get_dte(
     response_model=DTEResponse,
     summary="Buscar DTE por emisor, tipo y folio",
 )
-async def buscar_dte(
+def buscar_dte(
     rut_emisor: str,
     tipo_dte: int,
     folio: int,
@@ -164,7 +164,7 @@ async def buscar_dte(
 # ---- Endpoints CAFs ----
 
 @router.get("/cafs", response_model=list[CAFResponse], summary="Listar CAFs registrados")
-async def get_cafs(
+def get_cafs(
     rut_emisor: Optional[str] = Query(None),
     tipo_dte: Optional[int] = Query(None),
     usuario: dict = Depends(requerir_autenticacion),
@@ -192,7 +192,7 @@ async def get_cafs(
     response_model=CAFResponse,
     summary="Obtener CAF activo",
 )
-async def get_caf_activo(
+def get_caf_activo(
     rut_emisor: str,
     tipo_dte: int,
     usuario: dict = Depends(requerir_autenticacion),
@@ -220,7 +220,7 @@ async def get_caf_activo(
     summary="Registrar un nuevo CAF subiendo el XML",
     description="Sube un archivo CAF XML descargado del SII y lo registra de forma persistente en la BD.",
 )
-async def post_registrar_caf(
+def post_registrar_caf(
     archivo: UploadFile = File(..., description="Archivo CAF XML"),
     usuario: dict = Depends(requerir_autenticacion),
 ) -> CAFResponse:
@@ -228,7 +228,7 @@ async def post_registrar_caf(
     if not archivo.filename or not archivo.filename.lower().endswith(".xml"):
         raise ValidacionError("El archivo debe ser un CAF en formato XML.")
 
-    contenido = await leer_upload(archivo)
+    contenido = leer_upload_sincrono(archivo)
 
     try:
         caf = ManejadorCAF(contenido)
@@ -281,7 +281,7 @@ async def post_registrar_caf(
     response_model=FolioDisponibleResponse,
     summary="Obtener siguiente folio disponible",
 )
-async def get_siguiente_folio(
+def get_siguiente_folio(
     rut_emisor: str,
     tipo_dte: int,
     usuario: dict = Depends(requerir_autenticacion),
@@ -323,7 +323,7 @@ async def get_siguiente_folio(
 # ---- Endpoints Logs ----
 
 @router.get("/logs", response_model=list[LogResponse], summary="Consultar logs de auditoría")
-async def get_logs(
+def get_logs(
     accion: Optional[str] = Query(None),
     rut_emisor: Optional[str] = Query(None),
     fecha_desde: Optional[str] = Query(None),

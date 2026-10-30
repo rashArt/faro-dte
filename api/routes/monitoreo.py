@@ -10,7 +10,7 @@ router = APIRouter(prefix="/api/v1/monitoreo", tags=["Monitoreo"])
 
 
 @router.get("/folios")
-async def folios(
+def folios(
     rut: str = Query(..., description="RUT del emisor, ej: 76111111-6"),
     usuario: dict = Depends(requerir_autenticacion),
 ) -> dict:
@@ -20,6 +20,6 @@ async def folios(
 
 
 @router.get("/folios/cartera")
-async def folios_cartera(usuario: dict = Depends(requerir_autenticacion)) -> dict:
+def folios_cartera(usuario: dict = Depends(requerir_autenticacion)) -> dict:
     """Salud de folios de TODAS las empresas cargadas, ordenadas por urgencia (LOCAL)."""
     return salud_cartera()

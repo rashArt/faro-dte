@@ -17,7 +17,7 @@ router = APIRouter(prefix="/api/v1/onboarding", tags=["Onboarding"])
 
 
 @router.get("/diagnostico")
-async def diagnostico(
+def diagnostico(
     cert_id: int = Query(..., description="ID del certificado en el keystore"),
     rut: str = Query(..., description="RUT de la empresa, ej: 76111111-6"),
     nombre_sistema: str = Query("tu software propio",
@@ -42,7 +42,7 @@ async def diagnostico(
 
 
 @router.get("/cartera")
-async def cartera(
+def cartera(
     cert_id: int = Query(..., description="ID del certificado en el keystore"),
     nombre_sistema: str = Query("tu software propio"),
     usuario: dict = Depends(requerir_autenticacion),

@@ -1,8 +1,10 @@
 {
   // Entornos de REST Client para http/**/*.http (cambiar con Ctrl+Alt+E). Las claves NO van
   // aquí: se leen de http/.env (ignorado por git; plantilla en http/env.ejemplo).
+  // 127.0.0.1 y no "localhost": REST Client (Node) resuelve localhost a ::1 (IPv6) y Docker
+  // publica el puerto solo en 127.0.0.1, así que la conexión se rechaza (RequestError).
   "rest-client.environmentVariables": {
     "$shared": { "usuario": "admin" },
-    "local": { "base": "http://localhost:8000" }
+    "local": { "base": "http://127.0.0.1:8000" }
   }
 }

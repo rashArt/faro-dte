@@ -74,8 +74,12 @@ Excepciones, siempre por nombre fijo de afuera y nunca por gusto:
 ## 5. Código
 
 - Capas para lo nuevo: rutas (`api/routes/`, HTTP y validación) → servicios (`core/servicios/`,
-  dueños de la transacción) → acceso a datos (`core/database.py` y repositorios). El corazón SII
-  se llama, no se modifica (L2).
+  dueños de la transacción) → acceso a datos (`core/database.py` y repositorios) y adaptadores
+  (`core/adaptadores/`: SII con token en caché y sin escribir en la base, caché memoria/Redis).
+  El corazón SII se llama, no se modifica (L2).
+- Rutas `def` si hacen trabajo bloqueante (base, firma, disco, SII): FastAPI las corre en su pool
+  de hilos. `async def` solo si no bloquean o si envuelven lo bloqueante en `run_in_threadpool`.
+  Lo que compartan los hilos lleva candado.
 - Configuración solo por `core.config.settings`; nada de `os.environ` en código nuevo.
 - Hora solo por `core/reloj.py`.
 - Logs en español, sin secretos, sin certificados y sin RUT reales.

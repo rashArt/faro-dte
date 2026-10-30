@@ -8,7 +8,7 @@ import base64
 from typing import Annotated
 
 from fastapi import APIRouter, UploadFile, File, Form
-from api.util import leer_upload
+from api.util import leer_upload_sincrono
 from pydantic import BaseModel
 
 from core.crypto import CertificadoDigital
@@ -39,7 +39,7 @@ class CertificadoInfoResponse(BaseModel):
     Para operaciones de firma, debe enviarse en cada petición.
     """,
 )
-async def validar_certificado(
+def validar_certificado(
     archivo: Annotated[UploadFile, File(description="Archivo .p12 o .pfx del certificado digital")],
     password: Annotated[str, Form(description="Contraseña del certificado")],
 ) -> CertificadoInfoResponse:
@@ -49,7 +49,7 @@ async def validar_certificado(
     if not archivo.filename or not archivo.filename.lower().endswith((".p12", ".pfx")):
         raise ValidacionError("El archivo debe ser un certificado digital .p12 o .pfx")
 
-    contenido = await leer_upload(archivo)
+    contenido = leer_upload_sincrono(archivo)
     if len(contenido) == 0:
         raise ValidacionError("El archivo está vacío.")
 
@@ -86,7 +86,7 @@ class FirmarDatosResponse(BaseModel):
     summary="Firmar datos crudos con el certificado",
     description="Firma datos arbitrarios en Base64 con el certificado digital. Útil para pruebas de firma.",
 )
-async def firmar_datos(body: FirmarDatosRequest) -> FirmarDatosResponse:
+def firmar_datos(body: FirmarDatosRequest) -> FirmarDatosResponse:
     """
     Firma datos enviados en Base64 con el certificado digital.
     """

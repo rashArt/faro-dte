@@ -142,6 +142,8 @@ class Settings(BaseSettings):
     # Emisión (docs/deploy/PLAN.md, "Política de folios"): una fila `reservado` más vieja que
     # esto es de un proceso que cayó a mitad; su folio (sin timbre) vuelve a usarse.
     emision_plazo_reserva_min: int = Field(default=10, description="Minutos tras los que una reserva de folio huérfana se reusa")
+    # Caché compartida (docs/deploy/PLAN.md, fase 3): token del SII. Sin ella, memoria del proceso.
+    redis_url: Optional[str] = Field(default=None, description="Redis opcional para la caché (REDIS_URL), p. ej. redis://redis:6379/0")
 
     # ---- Exposición pública acotada ----
     # Host público que SOLO puede ver el buscador de boletas (ej. "boletas.tu-dominio.cl").

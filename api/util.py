@@ -22,3 +22,16 @@ async def leer_upload(archivo: UploadFile, max_bytes: int = MAX_UPLOAD_BYTES) ->
     if len(data) > max_bytes:
         raise ValidacionError(f"Archivo demasiado grande (máximo {limite_mb} MB).")
     return data
+
+
+def leer_upload_sincrono(archivo: UploadFile, max_bytes: int = MAX_UPLOAD_BYTES) -> bytes:
+    """`leer_upload` para rutas `def` (corren en el pool de hilos de FastAPI, docs/deploy/PLAN.md
+    fase 3): lee el archivo temporal directamente, con el mismo tope."""
+    limite_mb = max_bytes // (1024 * 1024)
+    if getattr(archivo, "size", None) and archivo.size > max_bytes:
+        raise ValidacionError(f"Archivo demasiado grande (máximo {limite_mb} MB).")
+    archivo.file.seek(0)
+    data = archivo.file.read(max_bytes + 1)
+    if len(data) > max_bytes:
+        raise ValidacionError(f"Archivo demasiado grande (máximo {limite_mb} MB).")
+    return data

@@ -25,6 +25,8 @@ tzdata>=2024.1
 sqlalchemy>=2.0
 alembic>=1.13
 psycopg[binary]>=3.2
+# Caché opcional (fork, fase 3 de docs/deploy/PLAN.md): solo se usa si hay REDIS_URL.
+redis>=5.0
 
 # Postulación a certificación de BOLETAS: el portal certBolElectDteInternet es una app GWT
 # (no scriptable por httpx). core/postulacion.py la maneja con playwright. Import perezoso:

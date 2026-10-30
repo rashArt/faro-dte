@@ -53,6 +53,7 @@ python-dotenv==1.2.4
 python-jose==3.5.0
 python-multipart==0.0.32
 PyYAML==6.0.3
+redis==8.1.0
 referencing==0.37.0
 reportlab==5.1.0
 rpds-py==2026.9.1

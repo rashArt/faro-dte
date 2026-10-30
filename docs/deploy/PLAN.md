@@ -1,6 +1,6 @@
 # Plan del fork: Faro como API de facturación para productos
 
-> **Estado (2026-10-29):** fases 0, 1 y 2 hechas; lo demás, pendiente salvo lo marcado ✅. Rama de
+> **Estado (2026-10-29):** fases 0 a 3 hechas; lo demás, pendiente salvo lo marcado ✅. Rama de
 > trabajo: `servidor-produccion`. Los hallazgos están **verificados en vivo** contra la imagen
 > Docker del motor Python (`tools/sondeo_integridad.py`).
 >
@@ -44,8 +44,8 @@ SQLite → Postgres (las instancias del fork parten de cero).
 | 9 | Imagen construida desde Windows | `autocrlf` → corpus dorado 0/15; con LF, **15/15** | media · ✅ corregido (fase 0) |
 | 10 | N+1 | **No hay** en la API: listados paginados, ~5 consultas por emisión | — |
 | 11 | Dependencias sin fijar | `mcp` 2.x rompe `mcp_server.py` | media · ✅ corregido (fase 0) |
-| 12 | Event loop | `/health` de 19 ms a **1.533 ms** con 8 emisiones en paralelo: 72 rutas `async def` con trabajo bloqueante | alta |
-| 13 | Token del SII | se pide de nuevo en cada envío o consulta (un `ClienteSII` por petición) | media |
+| 12 | Event loop | `/health` de 19 ms a **1.533 ms** con 8 emisiones en paralelo: 72 rutas `async def` con trabajo bloqueante | alta · ✅ corregido (fase 3) |
+| 13 | Token del SII | se pide de nuevo en cada envío o consulta (un `ClienteSII` por petición) | media · ✅ corregido (fase 3) |
 | 14 | Veredicto del SII | ningún flujo guarda `aceptado`/`rechazado` en `dtes`; queda en `enviado` | media |
 | 15 | Notas 56/61 | `core/dte.py` no exige referencias; el SII sí | media · ✅ corregido (fase 2) |
 | 16 | Envío de boletas | sin ruta en Python (el cliente REST existe y está verificado en producción) | alta |
@@ -69,8 +69,9 @@ Gráfico del recorrido con estos puntos marcados: artifact "Recorrido del compro
 ## Fases
 
 Cada fase cierra con pruebas en verde en **SQLite y Postgres** (desde la fase 1) y `test_dorado`
-15/15. **Esta etapa: fases 0, 1, 2 y 6.** Las fases 3, 4 y 5 son la etapa siguiente, salvo lo
-que la fase 2 adelanta.
+15/15. **Orden (cambiado el 2026-10-29):** 0 → 5 y la 6 al final. Sin VPS todavía y sin pruebas
+reales contra el SII, se despliega una sola vez, ya con envío al SII, tokens por producto y la API
+estable bajo carga.
 
 ### Fase 0 — Base de trabajo
 - ✅ `http/` con REST Client (80 operaciones generadas por `tools/generar_http.py` + flujos a mano).
@@ -173,23 +174,41 @@ los scripts siguen con `core/orchestrator.py::emitir_documento`, sin cambios.
   hallazgos** (antes 8); la base PostgreSQL local con 11 documentos se actualizó de `0001` a
   `0002` sin perder datos.
 
-### Fase 3 — Política async, caché y adaptadores (etapa siguiente)
-- Rutas bloqueantes como `def` o con `run_in_threadpool` (#12). Prueba: `/health` estable bajo
-  carga de emisión.
-- Adaptador SII sin escritura en la base (el servicio persiste) y token en caché (#13).
-- Redis opcional (`REDIS_URL`); sin él, caché en memoria.
+### Fase 3 — Política async, caché y adaptadores ✅ (2026-10-29)
+- ✅ **Rutas en el pool de hilos (#12):** las 67 rutas de `api/routes/` que no esperaban nada (o
+  solo `leer_upload` o una dependencia de auth) pasaron de `async def` a `def`; FastAPI las corre
+  en su pool. Las 9 de `simulacion` y `mipyme` ya usaban `run_in_threadpool`. Las dependencias de
+  `core/auth.py` también son `def` (consultan la base). Las rutas de `main.py` (páginas y
+  `/health`) siguen `async`: no bloquean. Medido contra la imagen con 8 emisiones en paralelo:
+  `/health` llega a **206 ms** (imagen de la fase 2: 2.006 ms). Prueba:
+  `tests/api/test_concurrencia.py` y la sección 6 de `tools/sondeo_integridad.py`.
+- ✅ **Seguro entre hilos:** las rutas ahora corren en paralelo. Lo único compartido que no lo era
+  es el `XMLSchema` de lxml (guarda su `error_log` en el objeto): `core/schema_validator.py`
+  valida de a uno por esquema. Folio y emisión ya tenían su candado en la base (fases 1 y 2).
+- ✅ **Adaptadores (#13):** `core/adaptadores/sii.py` (`ClienteFacturas`, `ClienteBoletas`) son
+  los clientes de siempre con el token compartido por certificado, ambiente y servicio (50
+  minutos) y **sin escribir en la base** (`models.persistir_envios`). `/dte/enviar` y
+  `/estado/*` los usan; `/dte/enviar` marca los documentos él mismo, como antes.
+  `core/sii.py` y `core/sii_boleta.py` no se tocaron.
+- ✅ **Caché** `core/adaptadores/cache.py`: memoria del proceso, o **Redis** con `REDIS_URL`
+  (valores cifrados con Fernet: un token del SII es una credencial). `redis` en
+  `requirements.txt`; CI corre la suite con Redis.
+- ✅ Verificación: suite 35 + 6 omitidas en SQLite sin Redis, 41 en PostgreSQL 17 con Redis;
+  `test_dorado` 15/15; `sondeo_integridad` contra la imagen: 0 hallazgos.
+- Pendiente para cuando haya réplicas (roadmap): candado de líder para el RVD y la reposición
+  de folios, y límite de intentos de login en la caché.
 
-### Fase 4 — Autenticación mínima (etapa siguiente)
+### Fase 4 — Autenticación mínima
 - Tokens de integración ligados a la cuenta del administrador, con rol `integracion`.
   Migración `0003`.
 
-### Fase 5 — API para productos (etapa siguiente; se suma a lo existente)
+### Fase 5 — API para productos (se suma a lo existente)
 - `emitir` y `previsualizar` con emisor opcional (lo toma del negocio).
 - `POST /api/v1/dte/{dte_id}/enviar` (facturas por SOAP, boletas por REST: #16) y
   `GET /api/v1/dte/{dte_id}/estado`, que **guarda** el veredicto (#14).
 - Regenerar `http/api/`, completar `http/flujos/02-cliente.http` (la fase 2 dejó la emisión; falta enviar y consultar) y reescribir [`INTEGRACION.md`](INTEGRACION.md).
 
-### Fase 6 — Despliegue
+### Fase 6 — Despliegue (al final)
 `docker-compose.example.yml` con Postgres (y Redis opcional), `alembic upgrade head` como paso
 explícito, respaldo con `pg_dump` + volumen `storage/` + `.env`.
 

@@ -36,7 +36,7 @@ def _vigente(indicador: str, fecha: str) -> Optional[dict]:
 
 
 @router.get("", summary="UF, UTM y dólar vigentes a una fecha (hoy por defecto)")
-async def valores_vigentes(fecha: Optional[str] = Query(None, description="YYYY-MM-DD")) -> dict:
+def valores_vigentes(fecha: Optional[str] = Query(None, description="YYYY-MM-DD")) -> dict:
     f = fecha or date.today().isoformat()
     try:
         date.fromisoformat(f)
@@ -49,7 +49,7 @@ async def valores_vigentes(fecha: Optional[str] = Query(None, description="YYYY-
 
 
 @router.get("/historico", summary="Tabla mensual de un año: UF y dólar al día 1 (vigentes) y UTM del mes")
-async def historico(anio: int = Query(..., ge=2000, le=2100)) -> dict:
+def historico(anio: int = Query(..., ge=2000, le=2100)) -> dict:
     meses = []
     for m in range(1, 13):
         f = f"{anio:04d}-{m:02d}-01"
@@ -68,7 +68,7 @@ async def historico(anio: int = Query(..., ge=2000, le=2100)) -> dict:
 
 
 @router.get("/{indicador}/serie", summary="Serie diaria/mensual de un indicador entre dos fechas")
-async def serie(indicador: str, desde: str = Query(...), hasta: str = Query(...)) -> dict:
+def serie(indicador: str, desde: str = Query(...), hasta: str = Query(...)) -> dict:
     if indicador not in INDICADORES:
         raise ValidacionError(f"Indicador desconocido: {indicador}")
     filas = database.obtener_todos("SELECT fecha, valor FROM valores WHERE indicador=? AND fecha BETWEEN ? AND ? ORDER BY fecha", (indicador, desde, hasta))
@@ -76,7 +76,7 @@ async def serie(indicador: str, desde: str = Query(...), hasta: str = Query(...)
 
 
 @router.get("/{indicador}", summary="Un indicador vigente a una fecha, con la fecha real del valor")
-async def valor_vigente(indicador: str, fecha: Optional[str] = Query(None)) -> dict:
+def valor_vigente(indicador: str, fecha: Optional[str] = Query(None)) -> dict:
     if indicador not in INDICADORES:
         raise ValidacionError(f"Indicador desconocido: {indicador} (uf | utm | dolar)")
     f = fecha or date.today().isoformat()

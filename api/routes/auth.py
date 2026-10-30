@@ -74,7 +74,7 @@ class MensajeResponse(BaseModel):
 # ---- Endpoints ----
 
 @router.post("/login", response_model=LoginResponse, summary="Iniciar sesión")
-async def login(body: LoginRequest) -> LoginResponse:
+def login(body: LoginRequest) -> LoginResponse:
     """
     Autentica un usuario y retorna un token JWT.
 
@@ -106,7 +106,7 @@ async def login(body: LoginRequest) -> LoginResponse:
     status_code=status.HTTP_201_CREATED,
     summary="Registrar nuevo usuario",
 )
-async def registro(
+def registro(
     body: RegistroRequest,
     credentials: HTTPAuthorizationCredentials | None = Depends(security),
 ) -> RegistroResponse:
@@ -116,7 +116,7 @@ async def registro(
     solo el administrador puede registrar otros (hallazgo #1 de docs/deploy/PLAN.md).
     """
     if listar_usuarios():
-        await requerir_administrador(credentials)
+        requerir_administrador(credentials)
     # Sin filtrar por activo: un usuario desactivado conserva el username (UNIQUE) y antes
     # esto terminaba en un IntegrityError → 500. Mismo contrato que el motor Go: 409.
     from core.database import obtenerUno
@@ -144,7 +144,7 @@ async def registro(
 
 
 @router.get("/usuarios", response_model=list[UsuarioResponse], summary="Listar usuarios")
-async def listar_todos_usuarios(
+def listar_todos_usuarios(
     usuario_actual: dict = Depends(requerir_autenticacion),
 ) -> list[UsuarioResponse]:
     """Lista todos los usuarios activos. Requiere autenticación."""
@@ -167,7 +167,7 @@ async def listar_todos_usuarios(
     response_model=MensajeResponse,
     summary="Desactivar usuario",
 )
-async def eliminar_usuario(
+def eliminar_usuario(
     user_id: int,
     usuario_actual: dict = Depends(requerir_administrador),
 ) -> MensajeResponse:
@@ -186,7 +186,7 @@ async def eliminar_usuario(
 
 
 @router.get("/me", summary="Obtener información del usuario actual")
-async def obtener_perfil(
+def obtener_perfil(
     usuario_actual: dict = Depends(requerir_autenticacion),
 ) -> dict:
     """Retorna la información del usuario autenticado."""

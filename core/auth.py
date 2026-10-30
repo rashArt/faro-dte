@@ -73,7 +73,7 @@ def decodificar_token(token: str) -> Optional[dict]:
         return None
 
 
-async def obtener_usuario_actual(
+def obtener_usuario_actual(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
 ) -> Optional[dict]:
     """
@@ -81,7 +81,7 @@ async def obtener_usuario_actual(
 
     Uso:
         @router.get("/protegido")
-        async def endpoint(usuario=Depends(obtener_usuario_actual)):
+        def endpoint(usuario=Depends(obtener_usuario_actual)):
             ...
     """
     if not credentials:
@@ -109,14 +109,14 @@ def _usuario_dueno() -> Optional[dict]:
     return usuarios[0] if usuarios else None
 
 
-async def requerir_autenticacion(
+def requerir_autenticacion(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
 ) -> dict:
     """
     Dependencia de FastAPI que REQUIERE autenticación: acepta un **JWT** (usuario) o una
     **API key** (`dte_...`, para integraciones/agentes). Lanza HTTP 401 si no hay ninguno válido.
     """
-    usuario = await obtener_usuario_actual(credentials)
+    usuario = obtener_usuario_actual(credentials)
     if usuario:
         actualizar_ultimo_acceso(usuario["id"])
         return usuario
@@ -165,11 +165,11 @@ def solicitante(usuario: dict):
                        es_admin=es_administrador(usuario))
 
 
-async def requerir_administrador(
+def requerir_administrador(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
 ) -> dict:
     """Como `requerir_autenticacion`, pero solo el administrador (403 para el resto)."""
-    usuario = await requerir_autenticacion(credentials)
+    usuario = requerir_autenticacion(credentials)
     if not es_administrador(usuario):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
                             detail="Esta acción es solo para el administrador de la instancia.")
@@ -181,7 +181,7 @@ def _es_clave_app(credentials: Optional[HTTPAuthorizationCredentials]) -> bool:
                 and secrets.compare_digest(credentials.credentials, settings.app_shell_key))
 
 
-async def requerir_clave_app(
+def requerir_clave_app(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
 ) -> dict:
     """Solo la clave efímera de la app de escritorio (`APP_SHELL_KEY`), que actúa como el dueño.
@@ -202,12 +202,12 @@ async def requerir_clave_app(
     return dueno
 
 
-async def requerir_usuario(
+def requerir_usuario(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
 ) -> dict:
     """Como `requerir_autenticacion` pero SOLO acepta un usuario real (JWT), no API keys. Para
     acciones sensibles como gestionar las propias API keys (que una key no cree más keys)."""
-    usuario = await obtener_usuario_actual(credentials)
+    usuario = obtener_usuario_actual(credentials)
     if not usuario:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

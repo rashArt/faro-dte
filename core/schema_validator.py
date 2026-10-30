@@ -1,5 +1,6 @@
 """core/schema_validator.py — Validación de XML DTE contra esquemas XSD del SII."""
 
+import threading
 from pathlib import Path
 from typing import List, Optional
 
@@ -10,6 +11,11 @@ from core.xml_seguro import parse_seguro
 
 _XSD_DIR = Path(__file__).parent / "xsd"
 _schema_cache: dict = {}
+# Un `XMLSchema` de lxml guarda su `error_log` en el objeto: dos hilos validando con el mismo
+# esquema mezclarían sus errores. Las rutas corren en el pool de hilos de FastAPI
+# (docs/deploy/PLAN.md, fase 3), así que cada esquema valida de a uno. Validar toma milisegundos.
+_candados: dict = {}
+_candado_cache = threading.Lock()
 
 # Cada tipo de raíz se valida contra su esquema oficial.
 _XSD_POR_TIPO = {
@@ -30,8 +36,10 @@ class ValidationResult(BaseModel):
 def _cargar_schema(tipo_xml: str = "EnvioDTE") -> etree.XMLSchema:
     """Carga (y cachea) el esquema XSD que corresponde al tipo de raíz."""
     archivo = _XSD_POR_TIPO.get(tipo_xml, "EnvioDTE_v10.xsd")
-    if archivo not in _schema_cache:
-        _schema_cache[archivo] = etree.XMLSchema(etree.parse(str(_XSD_DIR / archivo)))
+    with _candado_cache:
+        if archivo not in _schema_cache:
+            _schema_cache[archivo] = etree.XMLSchema(etree.parse(str(_XSD_DIR / archivo)))
+            _candados[id(_schema_cache[archivo])] = threading.Lock()
     return _schema_cache[archivo]
 
 
@@ -65,16 +73,17 @@ def validar_xml_dte(xml_bytes: bytes) -> ValidationResult:
     tipo_xml = _detectar_tipo_xml(root)
     schema = _cargar_schema(tipo_xml)
 
-    try:
-        schema.assertValid(root)
-        return ValidationResult(valido=True, errores=[], tipo_xml=tipo_xml)
-    except etree.DocumentInvalid:
-        # Extraer todos los errores del log de validación
-        errores = [
-            f"Línea {e.line}: {e.message}"
-            for e in schema.error_log
-        ]
-        return ValidationResult(valido=False, errores=errores, tipo_xml=tipo_xml)
+    with _candados[id(schema)]:
+        try:
+            schema.assertValid(root)
+            return ValidationResult(valido=True, errores=[], tipo_xml=tipo_xml)
+        except etree.DocumentInvalid:
+            # Extraer todos los errores del log de validación
+            errores = [
+                f"Línea {e.line}: {e.message}"
+                for e in schema.error_log
+            ]
+            return ValidationResult(valido=False, errores=errores, tipo_xml=tipo_xml)
 
 
 def validar_xml_dte_strict(xml_bytes: bytes) -> None:

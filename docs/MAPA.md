@@ -68,7 +68,8 @@ folio (atómico) → TED (firmado con la llave del CAF) → XML del DTE
 Punto de entrada único que rutea por tipo: **`core/orchestrator.py::emitir_documento`**
 (39/41 → `EnvioBOLETA` + REST; el resto → `EnvioDTE` + SOAP). En el fork, `POST /api/v1/dte/emitir`
 pasa por `core/servicios/emision.py` (`id_externo`, folio y fila en una transacción, timbrado =
-emitido; `docs/deploy/PLAN.md` fase 2), que usa los mismos pasos de los orquestadores.
+emitido; `docs/deploy/PLAN.md` fase 2), que usa los mismos pasos de los orquestadores. Las rutas
+del fork hablan con el SII por `core/adaptadores/sii.py` (token en caché, fase 3).
 
 ## Estructura
 

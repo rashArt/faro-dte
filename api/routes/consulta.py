@@ -195,13 +195,13 @@ def _pagina(cuerpo: str, rut="", folio="", monto="", tipo=39, fecha="") -> str:
 
 @router.get("", response_class=HTMLResponse)
 @router.get("/", response_class=HTMLResponse)
-async def formulario() -> HTMLResponse:
+def formulario() -> HTMLResponse:
     """Formulario público de consulta (GET)."""
     return HTMLResponse(_pagina(""))
 
 
 @router.get("/api", response_class=JSONResponse)
-async def consultar_api(rut: str, tipo: int, folio: int, monto: int,
+def consultar_api(rut: str, tipo: int, folio: int, monto: int,
                         fecha: str | None = None) -> JSONResponse:
     """Consulta en **JSON** — punto de integración para hospedar el buscador en otra app
     (p. ej. `tu-dominio.cl/misboletas/{idempresa}`, que llama a esto y renderiza su propia UI).
@@ -231,7 +231,7 @@ async def consultar_api(rut: str, tipo: int, folio: int, monto: int,
 
 
 @router.get("/xml")
-async def descargar_xml(rut: str, tipo: int, folio: int, monto: int,
+def descargar_xml(rut: str, tipo: int, folio: int, monto: int,
                         fecha: str | None = None) -> Response:
     """Descarga pública del XML firmado (mismo candado de 5 datos). Equivalente a LibreDTE `xml`."""
     fila = _buscar(rut, tipo, folio, monto, fecha)
@@ -244,7 +244,7 @@ async def descargar_xml(rut: str, tipo: int, folio: int, monto: int,
 
 
 @router.get("/pdf")
-async def descargar_pdf(rut: str, tipo: int, folio: int, monto: int,
+def descargar_pdf(rut: str, tipo: int, folio: int, monto: int,
                         fecha: str | None = None) -> Response:
     """Descarga pública del PDF (mismo candado). Sirve el PDF guardado o, si falta, lo
     regenera desde el XML (con el TED verbatim). Equivalente a LibreDTE `pdf`."""
@@ -272,7 +272,7 @@ async def descargar_pdf(rut: str, tipo: int, folio: int, monto: int,
 
 @router.post("", response_class=HTMLResponse)
 @router.post("/", response_class=HTMLResponse)
-async def consultar(
+def consultar(
     rut_emisor: str = Form(...),
     tipo_dte: int = Form(...),
     folio: str = Form(...),

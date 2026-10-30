@@ -5,7 +5,7 @@ Endpoints para gestión de CAF (Código de Autorización de Folios).
 """
 
 from fastapi import APIRouter, UploadFile, File
-from api.util import leer_upload
+from api.util import leer_upload_sincrono
 from pydantic import BaseModel
 from typing import Annotated
 
@@ -51,7 +51,7 @@ class ValidarFolioResponse(BaseModel):
     numerar y timbrar sus documentos tributarios electrónicos.
     """,
 )
-async def info_caf(
+def info_caf(
     archivo: Annotated[UploadFile, File(description="Archivo CAF en formato XML")],
 ) -> CAFInfoResponse:
     """
@@ -60,7 +60,7 @@ async def info_caf(
     if not archivo.filename or not archivo.filename.lower().endswith(".xml"):
         raise ValidacionError("El archivo debe ser un CAF en formato XML.")
 
-    contenido = await leer_upload(archivo)
+    contenido = leer_upload_sincrono(archivo)
 
     try:
         caf = ManejadorCAF(contenido)
@@ -86,7 +86,7 @@ async def info_caf(
     response_model=ValidarFolioResponse,
     summary="Validar si un folio está autorizado en un CAF",
 )
-async def validar_folio(body: ValidarFolioRequest) -> ValidarFolioResponse:
+def validar_folio(body: ValidarFolioRequest) -> ValidarFolioResponse:
     """
     Verifica si un número de folio está dentro del rango autorizado por el CAF.
     """

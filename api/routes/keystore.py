@@ -11,7 +11,7 @@ nunca devuelven secretos, sólo metadatos.
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, Form, Query, UploadFile, status
-from api.util import leer_upload
+from api.util import leer_upload_sincrono
 
 from pydantic import BaseModel, Field
 
@@ -23,7 +23,7 @@ router = APIRouter(prefix="/api/v1/keystore", tags=["Certificados (Keystore)"])
 
 
 @router.post("/certificados", status_code=status.HTTP_201_CREATED)
-async def subir_certificado(
+def subir_certificado(
     archivo: UploadFile = File(..., description="Certificado .p12 / .pfx"),
     password: str = Form(..., description="Contraseña del certificado"),
     nombre: str = Form(None, description="Nombre descriptivo (opcional)"),
@@ -35,7 +35,7 @@ async def subir_certificado(
     Valida el .p12 con la contraseña (rechaza si es incorrecta), extrae RUT y
     vencimiento, y lo almacena cifrado. Devuelve metadatos (sin secretos).
     """
-    contenido = await leer_upload(archivo)
+    contenido = leer_upload_sincrono(archivo)
     try:
         info = keystore.guardar_certificado(
             usuario["id"], contenido, password, nombre=nombre, alias=alias)
@@ -45,14 +45,14 @@ async def subir_certificado(
 
 
 @router.get("/certificados")
-async def listar_certificados(usuario: dict = Depends(requerir_autenticacion)) -> list[dict]:
+def listar_certificados(usuario: dict = Depends(requerir_autenticacion)) -> list[dict]:
     """Lista los certificados de la cuenta (metadatos, sin secretos)."""
     keystore.init_keystore()
     return keystore.listar_certificados(usuario["id"])
 
 
 @router.delete("/certificados/{cert_id}")
-async def eliminar_certificado(
+def eliminar_certificado(
     cert_id: int, usuario: dict = Depends(requerir_autenticacion),
 ) -> dict:
     """Elimina un certificado de la cuenta."""
@@ -62,7 +62,7 @@ async def eliminar_certificado(
 
 
 @router.get("/certificados/{cert_id}/empresas")
-async def empresas_del_certificado(
+def empresas_del_certificado(
     cert_id: int, usuario: dict = Depends(requerir_autenticacion),
 ) -> list[dict]:
     """DESCUBRE todas las empresas asociadas a un certificado (donde el titular es
@@ -84,7 +84,7 @@ async def empresas_del_certificado(
 
 # ----------------------------------------------------------------- Negocios
 @router.get("/empresa")
-async def previsualizar_empresa(
+def previsualizar_empresa(
     rut: str = Query(..., description="RUT del negocio, ej: 76111111-6"),
     ambiente: str = Query("certificacion", description="certificacion | produccion"),
     usuario: dict = Depends(requerir_autenticacion),
@@ -98,7 +98,7 @@ async def previsualizar_empresa(
 
 
 @router.post("/negocios", status_code=status.HTTP_201_CREATED)
-async def agregar_negocio(
+def agregar_negocio(
     rut: str = Form(...),
     cert_id: int = Form(None, description="Certificado que opera el negocio (opcional)"),
     ambiente: str = Form("certificacion"),
@@ -112,7 +112,7 @@ async def agregar_negocio(
 
 
 @router.get("/negocios")
-async def listar_negocios(usuario: dict = Depends(requerir_autenticacion)) -> list[dict]:
+def listar_negocios(usuario: dict = Depends(requerir_autenticacion)) -> list[dict]:
     """Lista los negocios de la cuenta (con los datos del emisor: giro, dirección…)."""
     negocios.init_negocios()
     return negocios.listar_negocios(usuario["id"])
@@ -133,7 +133,7 @@ class DatosNegocioIn(BaseModel):
 
 
 @router.put("/negocios/{negocio_id}", summary="Guardar los datos del emisor de un negocio (giro, dirección, código de actividad…)")
-async def actualizar_negocio(
+def actualizar_negocio(
     negocio_id: int, body: DatosNegocioIn, usuario: dict = Depends(requerir_autenticacion),
 ) -> dict:
     """Lo que antes se configuraba en `EMPRESA_*` del `.env` para todo el motor, ahora por
@@ -160,7 +160,7 @@ def _negocio_o_404(cuenta_id: int, negocio_id: int) -> dict:
 
 
 @router.get("/negocios/{negocio_id}/timbraje")
-async def timbraje_negocio(
+def timbraje_negocio(
     negocio_id: int, usuario: dict = Depends(requerir_autenticacion),
 ) -> dict:
     """Panel de timbraje del negocio: por cada tipo de DTE, si está autorizado y si el
@@ -192,7 +192,7 @@ class ClavesSIIIn(BaseModel):
 
 
 @router.put("/claves-sii", summary="Recordar (cifradas) las claves del SII de una empresa del gratuito")
-async def guardar_claves_sii(body: ClavesSIIIn, usuario: dict = Depends(requerir_autenticacion)) -> dict:
+def guardar_claves_sii(body: ClavesSIIIn, usuario: dict = Depends(requerir_autenticacion)) -> dict:
     """Solo cuando la persona marcó 'recordar en este equipo'. Se cifran con la clave maestra
     del keystore (la misma del certificado). Nunca se devuelven en claro: la respuesta dice
     solo qué hay guardado. Por defecto las claves viven en memoria de la app y mueren con ella."""
@@ -201,18 +201,18 @@ async def guardar_claves_sii(body: ClavesSIIIn, usuario: dict = Depends(requerir
 
 
 @router.get("/claves-sii/{rut_empresa}", summary="Qué claves del SII hay recordadas para la empresa (sin valores)")
-async def estado_claves_sii(rut_empresa: str, usuario: dict = Depends(requerir_autenticacion)) -> dict:
+def estado_claves_sii(rut_empresa: str, usuario: dict = Depends(requerir_autenticacion)) -> dict:
     return keystore.estado_claves_sii(usuario["id"], rut_empresa)
 
 
 @router.delete("/claves-sii/{rut_empresa}", summary="Olvidar las claves del SII de la empresa")
-async def olvidar_claves_sii(rut_empresa: str, usuario: dict = Depends(requerir_autenticacion)) -> dict:
+def olvidar_claves_sii(rut_empresa: str, usuario: dict = Depends(requerir_autenticacion)) -> dict:
     return {"olvidadas": keystore.eliminar_claves_sii(usuario["id"], rut_empresa)}
 
 
 @router.get("/negocios/{negocio_id}/contexto-emision",
             summary="Lo que el núcleo (Go) necesita para emitir por este negocio: certificado en PEM, resolución, rutas")
-async def contexto_emision(
+def contexto_emision(
     negocio_id: int, usuario: dict = Depends(requerir_clave_app),
 ) -> dict:
     """Entrega al cascarón de escritorio (app/) todo lo que el núcleo en Go necesita para
@@ -239,7 +239,7 @@ async def contexto_emision(
 
 
 @router.get("/negocios/{negocio_id}/estado")
-async def estado_negocio(
+def estado_negocio(
     negocio_id: int, usuario: dict = Depends(requerir_autenticacion),
 ) -> dict:
     """Estado de habilitación del negocio para facturar con software propio:
@@ -332,7 +332,7 @@ async def estado_negocio(
 
 
 @router.delete("/negocios/{negocio_id}")
-async def eliminar_negocio(
+def eliminar_negocio(
     negocio_id: int, usuario: dict = Depends(requerir_autenticacion),
 ) -> dict:
     """Elimina un negocio de la cuenta."""
@@ -342,7 +342,7 @@ async def eliminar_negocio(
 
 
 @router.get("/negocios/{negocio_id}/f29")
-async def f29_negocio(
+def f29_negocio(
     negocio_id: int, periodo: str = Query(..., description="Período tributario YYYYMM"),
     ppm: int = Query(0, description="PPM del período (opcional)"),
     remanente_anterior: int = Query(0, description="Remanente de crédito fiscal del mes anterior (opcional)"),

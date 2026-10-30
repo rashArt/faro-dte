@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import time
+from contextvars import ContextVar
 from datetime import datetime
 from typing import Optional
 
@@ -26,6 +27,11 @@ from core.database import ejecutar, obtener_todos, obtenerUno, get_db
 # (servicio de emisión, docs/deploy/PLAN.md "Política de folios"). No cuentan como emitidos
 # y su folio puede volver a usarse.
 ESTADOS_SIN_TIMBRE = ("reservado", "error")
+
+# Los clientes del SII marcan los documentos de un sobre después de enviarlo
+# (`marcar_enviados_por_xml`). Los adaptadores del fork (`core/adaptadores/sii.py`) lo apagan
+# durante su envío: ahí persiste quien llama, dueño de su transacción.
+persistir_envios: ContextVar[bool] = ContextVar("persistir_envios", default=True)
 
 def crear_dte(
     tipo_dte: int,
@@ -78,6 +84,8 @@ def marcar_enviados_por_xml(xml_envio, track_id, ambiente: Optional[str] = None,
     Returns:
         Número de filas actualizadas (0 si el sobre no corresponde a DTEs en esta BD).
     """
+    if not persistir_envios.get():
+        return 0
     import re as _re
     texto = xml_envio.decode("ISO-8859-1", "replace") if isinstance(xml_envio, bytes) else str(xml_envio)
     m = _re.search(r"<RutEmisor>([^<]+)</RutEmisor>", texto)
