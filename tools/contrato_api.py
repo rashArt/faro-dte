@@ -56,9 +56,9 @@ def dte_demo(tipo, items, receptor=None, folio=0, emisor=None, **extra):
     return d
 
 
-# `estado`, `id_externo` y `repetido` son del fork (servicio de emisión, docs/deploy/PLAN.md fase 2).
+# `estado`, `id_externo`, `repetido` (fase 2) y `envio` (fase 5) son del fork: servicio de emisión, docs/deploy/PLAN.md.
 IGNORAR_EMISION = {"dte_id", "folio", "xml_dte_path", "pdf_path", "xml_envio_path", "xml_envio_b64", "mensaje",
-                   "estado", "id_externo", "repetido"}
+                   "estado", "id_externo", "repetido", "envio"}
 # Campos de los tokens que solo tiene el fork (roles y renovación, docs/deploy/PLAN.md fase 4). Las rutas
 # nuevas del fork (`/caf`, `/dte/documentos/{id}`, `/auditoria`, `/apikeys/{id}/renovar`,
 # `/auth/cambiar-clave`) no están en el contrato: Go y Rust no las tienen. `/api/v1/db/*` sigue igual,

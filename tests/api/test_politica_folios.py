@@ -123,7 +123,7 @@ def test_id_externo_concurrente_gasta_un_solo_folio(instancia, cuerpo):
 
 
 def test_folio_explicito_es_solo_del_administrador(instancia, admin, cuerpo):
-    r = instancia.post("/api/v1/apikeys", json={"nombre": "producto-prueba"}, headers=admin)
+    r = instancia.post("/api/v1/apikeys", json={"nombre": "integracion-prueba"}, headers=admin)
     assert r.status_code in (200, 201), r.text
     clave = {"Authorization": f"Bearer {r.json()['api_key']}"}
     assert _emitir(instancia, clave, cuerpo(folio=1)).status_code == 403
@@ -139,7 +139,7 @@ def test_folio_explicito_adelante_salta_el_contador_y_atras_responde_409(instanc
 
 
 def test_id_externo_es_propio_de_cada_credencial(instancia, admin, cuerpo):
-    r = instancia.post("/api/v1/apikeys", json={"nombre": "otro-producto"}, headers=admin)
+    r = instancia.post("/api/v1/apikeys", json={"nombre": "otra-integracion"}, headers=admin)
     clave = {"Authorization": f"Bearer {r.json()['api_key']}"}
     a = _emitir(instancia, admin, cuerpo(), "pedido-207").json()
     b = _emitir(instancia, clave, cuerpo(), "pedido-207").json()

@@ -15,8 +15,8 @@ Alternativa a Swagger para probar la API de Faro sin salir de VS Code. Requiere 
 
 | Carpeta | Contenido |
 |---|---|
-| `api/` | **Todas** las operaciones de `/openapi.json` (82, en 15 archivos, uno por grupo). Las genera `tools/generar_http.py`: no se editan a mano. Los cuerpos traen solo los campos obligatorios con datos ficticios; los opcionales se listan en un comentario `# opcionales:`. |
-| `flujos/` | Recorridos escritos a mano, en orden. `01-practica.http`: empresa de práctica (emitir, ver, anular, reiniciar) sin SII ni certificado real. `02-cliente.http`: emitir como un producto, con el certificado del negocio e `id_externo` (reintento, 409, 422 sin gastar folio); la fase 5 le agrega el envío al SII. `03-tokens.http`: el token de un sistema (emite, ve solo lo suyo, 403 fuera de su rol), renovar sin perder el `id_externo`, revocar, auditoría y bloqueo de login. |
+| `api/` | **Todas** las operaciones de `/openapi.json` (85, en 15 archivos, uno por grupo). Las genera `tools/generar_http.py`: no se editan a mano. Los cuerpos traen solo los campos obligatorios con datos ficticios; los opcionales se listan en un comentario `# opcionales:`. |
+| `flujos/` | Recorridos escritos a mano, en orden. `01-practica.http`: empresa de práctica (emitir, ver, anular, reiniciar) sin SII ni certificado real. `02-cliente.http`: emitir como una integración, con el certificado del negocio e `id_externo` (reintento, 409, 422 sin gastar folio) y, desde la fase 5, emitir sin emisor, estado, envío a mano, BORRADOR y alertas. `03-tokens.http`: el token de un sistema (emite, ve solo lo suyo, 403 fuera de su rol), renovar sin perder el `id_externo`, revocar, auditoría y bloqueo de login. |
 
 Regenerar `api/` cuando cambie una ruta (con la instancia local arriba):
 

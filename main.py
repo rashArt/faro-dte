@@ -26,6 +26,7 @@ from core.database import init_db
 from core.datos import url_segura
 from core.folios_auto import programador_folios
 from core.scheduler import programador
+from core.servicios.envio import programador_despacho
 from core.models import obtener_usuario_por_username, crear_usuario, listar_usuarios
 from core.auth import hash_password, requerir_administrador, requerir_autenticacion
 
@@ -116,6 +117,16 @@ async def lifespan(app: FastAPI):
     else:
         logger.info("Gestión automática de folios desactivada (FOLIOS_AUTO_ACTIVO=false)")
 
+    # Despacho al SII (fase 5 de docs/deploy/PLAN.md): envía lo emitido con `enviar` y sigue el
+    # veredicto. Con ENVIO_SII=desactivado (por defecto) nada sale al SII.
+    if settings.envio_sii == "activo":
+        programador_despacho.intervalo_seg = settings.despacho_intervalo_seg
+        programador_despacho.iniciar()
+    elif settings.es_produccion:
+        logger.warning("ENVIO_SII=desactivado en PRODUCCIÓN: se emite pero nada llega al SII.")
+    else:
+        logger.info("Envío al SII desactivado (ENVIO_SII=desactivado): se emite sin enviar")
+
     logger.info(f"API disponible en http://{settings.host}:{settings.port}")
     logger.info(f"Documentación: http://localhost:{settings.port}/docs")
 
@@ -123,6 +134,7 @@ async def lifespan(app: FastAPI):
 
     await programador.detener()
     await programador_folios.detener()
+    await programador_despacho.detener()
     logger.info("Deteniendo DTE Chile API...")
 
 

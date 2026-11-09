@@ -65,7 +65,7 @@ Excepciones, siempre por nombre fijo de afuera y nunca por gusto:
 | Rutas | bajo `/api/v1`, en español, con el estilo existente: recurso y acción (`/dte/emitir`, `/dte/{dte_id}/enviar`, `/dte/{dte_id}/estado`) |
 | Autenticación | solo `Authorization: Bearer <token>`. Ninguna cabecera propia obligatoria |
 | Compatibilidad | **no se quita ni se renombra** un campo ni una ruta. Lo nuevo entra como campo opcional o ruta nueva |
-| Errores | el formato uniforme de `core/errors.py`: `{"codigo", "mensaje", "detalle"}`. `codigo` es estable y en `snake_case`, para que el producto ramifique; `mensaje` es para personas. Nunca secretos ni trazas en ninguno de los dos |
+| Errores | el formato uniforme de `core/errors.py`: `{"codigo", "mensaje", "detalle"}`. `codigo` es estable y en `snake_case`, para que la integración ramifique; `mensaje` es para personas. Nunca secretos ni trazas en ninguno de los dos |
 | Errores nuevos | subclases de `core/errors.py` (`ValidacionError`, `ConflictoError`, `RecursoNoEncontrado`…), no `HTTPException` sueltos |
 | Códigos HTTP | 200 o 201 · 401 sin credencial · 403 sin permiso · 404 no existe · 409 conflicto (`id_externo` en curso, documento ya enviado, `IntegrityError`) · 422 datos inválidos · 502 el SII falló (`SIIError`) |
 | Montos y fechas en JSON | como hoy: montos enteros en pesos y fechas `AAAA-MM-DD` |

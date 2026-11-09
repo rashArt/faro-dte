@@ -1,6 +1,6 @@
-# Plan del fork: Faro como API de facturación para productos
+# Plan del fork: Faro como API de facturación para integraciones
 
-> **Estado (2026-10-30):** fases 0 a 4 hechas; lo demás, pendiente salvo lo marcado ✅. Rama de
+> **Estado (2026-11-09):** fases 0 a 5 hechas; lo demás, pendiente salvo lo marcado ✅. Rama de
 > trabajo: `servidor-produccion`. Los hallazgos están **verificados en vivo** contra la imagen
 > Docker del motor Python (`tools/sondeo_integridad.py`).
 >
@@ -13,12 +13,12 @@
 
 ## Objetivo
 
-Una instancia de Faro por empresa cliente. Tus productos la llaman por la red interna para
+Una instancia de Faro por empresa cliente. Tus sistemas (las **integraciones**: punto de venta, tienda, ERP) la llaman por la red interna para
 emitir, enviar al SII y consultar. El resultado tiene que ser:
 
-- **completo**: todo lo que el motor ofrece hoy sigue disponible. Se agrega lo que un producto
+- **completo**: todo lo que el motor ofrece hoy sigue disponible. Se agrega lo que una integración
   necesita (emisor y certificado tomados de la instancia, idempotencia, envío y estado por
-  documento) y una autenticación simple: **un administrador y tokens por producto**;
+  documento) y una autenticación simple: **un administrador y un token por integración**;
 - **seguro ante reintentos y concurrencia**: sin duplicados, sin folios perdidos en silencio y
   sin sobrescribir documentos;
 - **con migraciones controladas** (Alembic) y **PostgreSQL** gestionable desde herramientas
@@ -46,9 +46,9 @@ SQLite → Postgres (las instancias del fork parten de cero).
 | 11 | Dependencias sin fijar | `mcp` 2.x rompe `mcp_server.py` | media · ✅ corregido (fase 0) |
 | 12 | Event loop | `/health` de 19 ms a **1.533 ms** con 8 emisiones en paralelo: 72 rutas `async def` con trabajo bloqueante | alta · ✅ corregido (fase 3) |
 | 13 | Token del SII | se pide de nuevo en cada envío o consulta (un `ClienteSII` por petición) | media · ✅ corregido (fase 3) |
-| 14 | Veredicto del SII | ningún flujo guarda `aceptado`/`rechazado` en `dtes`; queda en `enviado` | media |
+| 14 | Veredicto del SII | ningún flujo guarda `aceptado`/`rechazado` en `dtes`; queda en `enviado` | media · ✅ corregido (fase 5) |
 | 15 | Notas 56/61 | `core/dte.py` no exige referencias; el SII sí | media · ✅ corregido (fase 2) |
-| 16 | Envío de boletas | sin ruta en Python (el cliente REST existe y está verificado en producción) | alta |
+| 16 | Envío de boletas | sin ruta en Python (el cliente REST existe y está verificado en producción) | alta · ✅ corregido (fase 5) |
 
 Gráfico del recorrido con estos puntos marcados: artifact "Recorrido del comprobante".
 
@@ -58,11 +58,11 @@ Gráfico del recorrido con estos puntos marcados: artifact "Recorrido del compro
 |---|---|
 | Forma | **Mejorar en el lugar** con el estándar de [`ARQUITECTURA.md`](ARQUITECTURA.md): servicios con su transacción, repositorios y migraciones dentro de `core/` y `api/`. `core/sobre.py` y la generación del XML no se tocan |
 | Repositorio | rama `servidor-produccion`. `nucleo/`, `nucleo-rs/`, `app/`, `app-rs/` y el MCP **se quedan como están** para traer cambios del repositorio original |
-| Certificado | **Ya se guarda**: el `.p12` y su contraseña van cifrados con Fernet (`DTE_MASTER_KEY`) en el keystore de la base (`core/keystore.py`, columnas `p12_cifrado` y `clave_cifrada`), nunca en claro ni en una ruta pública (L6). Se sube **una vez** por el administrador. La emisión lo toma del negocio de la instancia (`negocios.cert_id`): el producto no lo envía. Se descifra una vez por proceso y queda en memoria, y se invalida al reemplazarlo. `DTE_MASTER_KEY` vive en los secretos del despliegue, no en `storage/` ni en la base |
+| Certificado | **Ya se guarda**: el `.p12` y su contraseña van cifrados con Fernet (`DTE_MASTER_KEY`) en el keystore de la base (`core/keystore.py`, columnas `p12_cifrado` y `clave_cifrada`), nunca en claro ni en una ruta pública (L6). Se sube **una vez** por el administrador. La emisión lo toma del negocio de la instancia (`negocios.cert_id`): la integración no lo envía. Se descifra una vez por proceso y queda en memoria, y se invalida al reemplazarlo. `DTE_MASTER_KEY` vive en los secretos del despliegue, no en `storage/` ni en la base |
 | Datos | SQLAlchemy 2 Core + **Alembic** desde el primer cambio de esquema; SQLite y Postgres con el mismo código y las mismas migraciones |
 | Transacción | una por caso de uso; el servicio es su dueño |
-| Idempotencia | **Sin cabeceras ni claves que generar**: un campo `id_externo` en el mismo JSON (no se llama `referencia` para no confundirlo con `dte.referencias`, las referencias a otros documentos del SII), con el identificador que el producto ya tiene (pedido, venta, orden). Único por token de integración. Es obligatorio para los tokens de integración y opcional en la ruta actual: la UI `/app`, los `.http` y `tools/contrato_api.py` siguen funcionando sin él. La verdad está en la base, en la misma transacción que el folio. Reglas en [Política de folios](#política-de-folios) |
-| Autenticación | un **administrador** (JWT) y **tokens de integración** por producto, ligados a su cuenta, con rol `integracion`: emitir, enviar, consultar. Gestión (keystore, CAF, tokens) solo el administrador. Registro público cerrado |
+| Idempotencia | **Sin cabeceras ni claves que generar**: un campo `id_externo` en el mismo JSON (no se llama `referencia` para no confundirlo con `dte.referencias`, las referencias a otros documentos del SII), con el identificador que la integración ya tiene (pedido, venta, orden). Único por token de integración. Es obligatorio para los tokens de integración y opcional en la ruta actual: la UI `/app`, los `.http` y `tools/contrato_api.py` siguen funcionando sin él. La verdad está en la base, en la misma transacción que el folio. Reglas en [Política de folios](#política-de-folios) |
+| Autenticación | un **administrador** (JWT) y **tokens de integración** (uno por sistema), ligados a su cuenta, con rol `integracion`: emitir, enviar, consultar. Gestión (keystore, CAF, tokens) solo el administrador. Registro público cerrado |
 | Superficie | **no se corta nada**: las rutas actuales siguen montadas; las nuevas se suman. El emisor y el certificado pasan a ser opcionales (los completa el negocio de la instancia). Las únicas restricciones son de seguridad (#1, #8); cambian respuestas que `tools/contrato_api.py` compara con Go y Rust, así que en el fork ese gate excluye esos pasos (Go y Rust no se tocan) |
 | Caché | Redis opcional: token SII, resolución, límite de login y candado de líder. Nunca folios ni idempotencia |
 
@@ -70,7 +70,7 @@ Gráfico del recorrido con estos puntos marcados: artifact "Recorrido del compro
 
 Cada fase cierra con pruebas en verde en **SQLite y Postgres** (desde la fase 1) y `test_dorado`
 15/15. **Orden (cambiado el 2026-10-29):** 0 → 5 y la 6 al final. Sin VPS todavía y sin pruebas
-reales contra el SII, se despliega una sola vez, ya con envío al SII, tokens por producto y la API
+reales contra el SII, se despliega una sola vez, ya con envío al SII, tokens por integración y la API
 estable bajo carga.
 
 ### Fase 0 — Base de trabajo
@@ -199,7 +199,7 @@ los scripts siguen con `core/orchestrator.py::emitir_documento`, sin cambios.
   de folios. (El límite de intentos de login llegó en la fase 4.)
 
 ### Fase 4 — Roles, tokens, auditoría y rutas sin `/db` ✅ (2026-10-30)
-Una empresa por despliegue: no hay entidad central ni tabla de productos.
+Una empresa por despliegue: no hay entidad central ni tabla de integraciones.
 - ✅ **Dos roles** (`core/autorizacion.py`). `administrador`: los usuarios con login (JWT) y la
   clave de la app; hacen todo. `integracion`: los tokens `dte_…` de cada sistema que llama a la
   API (punto de venta, tienda, ERP). El token emite, envía, consulta y gestiona certificados,
@@ -257,11 +257,49 @@ Una empresa por despliegue: no hay entidad central ni tabla de productos.
   `sondeo_integridad` contra la imagen: 0 hallazgos (sección 7 nueva: roles y límites).
 - Fuera de esta fase: la pantalla `/apikeys` (UI local) no tiene botón de renovar; la ruta sí.
 
-### Fase 5 — API para productos (se suma a lo existente)
-- `emitir` y `previsualizar` con emisor opcional (lo toma del negocio).
-- `POST /api/v1/dte/{dte_id}/enviar` (facturas por SOAP, boletas por REST: #16) y
-  `GET /api/v1/dte/{dte_id}/estado`, que **guarda** el veredicto (#14).
-- Regenerar `http/api/`, completar `http/flujos/02-cliente.http` (la fase 2 dejó la emisión; falta enviar y consultar) y reescribir [`INTEGRACION.md`](INTEGRACION.md).
+### Fase 5 — API para integraciones ✅ (2026-11-09)
+"Integración" es el sistema que llama a la API (punto de venta, tienda, ERP); "producto" queda
+para lo que se vende en la factura. El motor ya sabía enviar (facturas aceptadas en certificación,
+boletas en producción); faltaba unirlo a la API del servidor por documento.
+- ✅ **Flujo decidido: Faro despacha** (`core/servicios/envio.py`). Emitir responde al instante
+  con folio y PDF (el veredicto nunca cabe en esa respuesta: el SII decide después) y, con
+  `enviar` (por defecto), el despacho en segundo plano envía el **sobre guardado al emitir**, tal
+  cual (L1), y consulta el veredicto: facturas por SOAP, boletas por REST (#16), cada una con su
+  token (L9). La integración consulta `GET /dte/{dte_id}/estado`. Con `"enviar": false` maneja el
+  envío ella (`POST /dte/{dte_id}/enviar`); las mismas rutas.
+- ✅ **Veredicto guardado** (#14) desde `ACEPTADOS`/`RECHAZADOS`/`REPAROS` del documento, nunca
+  `EPR` (L3): `enviado` → `aceptado` | `aceptado_con_reparos` | `rechazado`. El código del rechazo
+  de una boleta queda en `motivo_sii`; el de una factura llega solo por correo y `motivo_sii` lo
+  avisa. `?consultar_sii=true` pregunta en el momento (como mucho cada 30 s).
+- ✅ **Reintentos y alertas.** Envío fallido: reintento con espera creciente (1, 2, 4… hasta 60
+  min); a los `ENVIO_MAX_INTENTOS` (8), `envio_fallido`. Consultas cada vez más espaciadas (20 s →
+  1 h); a las `VEREDICTO_ALERTA_HORAS` (6) sin veredicto, `sin_veredicto` (se sigue preguntando).
+  `GET /dte/alertas` (administrador): `sin_veredicto`, `envio_fallido` y `folios_por_anular`
+  (rechazados: el folio quedó quemado). Cada hito queda en la auditoría.
+- ✅ **Varios procesos sin choque:** cada documento se toma con `dtes.tomado_hasta` (UPDATE
+  condicional, igual en SQLite y PostgreSQL); un envío a mano sobre uno tomado responde 409
+  `en_curso`. El despacho corre en el lifespan (asyncio + hilo), como el RVD.
+- ✅ **`ENVIO_SII=desactivado` por defecto:** se emite igual y nada sale al SII (`envio:
+  "desactivado"`, enviar a mano → 409 `envio_desactivado`). Así se desarrolla con el CAF y el
+  certificado ficticios sin mandarlos al SII. En producción desactivado, aviso al arrancar.
+- ✅ **Emisor opcional** en `emitir` y `previsualizar`: sin `emisor`, el del negocio (con varios,
+  `rut_emisor`); si le faltan datos, 422 con la lista. La huella del reintento sale del JSON tal
+  como llegó: cambiar los datos del negocio no convierte un reintento en corrección.
+  `previsualizar` acepta además sin `cert_id` (certificado del negocio).
+- ✅ **BORRADOR** sobre el PDF de `previsualizar` (`core/pdf_borrador.py`, pypdf), sin tocar
+  `core/pdf_gen.py`.
+- ✅ **Migración `0004`:** columnas de despacho en `dtes` (`seguimiento`, `intentos_envio`,
+  `proxima_accion`, `tomado_hasta`, `enviado_en`, `consultado_en`, `veredicto_en`, `motivo_sii`) e
+  índice `idx_dtes_despacho`.
+- ✅ `http/api/` regenerado (85 operaciones), `http/flujos/02-cliente.http` con los pasos 13 a 18,
+  [`INTEGRACION.md`](INTEGRACION.md) reescrito como guía de integración. "Producto" → "integración"
+  en los documentos del fork.
+- ✅ Verificación: suite 83 + 7 omitidas en SQLite sin Redis (`tests/api/test_envio.py`, 15 pruebas
+  con el SII falso); PostgreSQL 17 con Redis; `test_dorado` 15/15; `sondeo_integridad` con la
+  sección 8 (despacho desactivado en la imagen).
+- Pendiente fuera del código: **probar el despacho contra el SII de certificación** con CAF y
+  certificado reales (envío, veredicto, rechazo de boleta con su código). Por verificar ahí: si la
+  factura debe estar aceptada antes de entregarla al receptor.
 
 ### Fase 6 — Despliegue (al final)
 `docker-compose.example.yml` con Postgres (y Redis opcional), `alembic upgrade head` como paso
@@ -286,7 +324,7 @@ cambia esto. Solo vuelve a usarse un folio que nunca llegó a timbrarse.
 
 ### El `id_externo`
 
-El producto no genera ninguna clave ni agrega cabeceras. Manda su propio identificador de la
+La integración no genera ninguna clave ni agrega cabeceras. Manda su propio identificador de la
 venta en el mismo JSON, con su token Bearer:
 
 ```http

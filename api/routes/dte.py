@@ -26,10 +26,10 @@ from core.caf import ManejadorCAF
 from core.config import settings
 from core.crypto import CertificadoDigital
 from core.sobre import firmar_documento_standalone
-from core.dte import DTEInput, GeneradorDTE, TipoDTE, calcular_totales
+from core.dte import DTEInput, EmisorModel, GeneradorDTE, TipoDTE, calcular_totales
 from core.errors import CAFError, CertificadoError, FolioError, SIIError, SIIRechazoError, ValidacionError
 from core.orchestrator import ruta_desde_bd
-from core.servicios import emision
+from core.servicios import emision, envio
 from core.pdf_gen import generar_pdf_dte
 from core.preview import previsualizar_dte as _previsualizar_dte
 from core.adaptadores.sii import ClienteFacturas
@@ -399,13 +399,30 @@ def generar_pdf_simple(body: DTEInput) -> Response:
 
 # ---- Emisión orquestada ----
 
+class DTEEntrada(DTEInput):
+    """El documento como lo manda una integración: `emisor` es opcional (fase 5). Sin él, el
+    servidor lo arma con los datos del negocio; con varios negocios, `rut_emisor` dice cuál."""
+    emisor: Optional[EmisorModel] = None
+    rut_emisor: Optional[str] = Field(None, description="Negocio emisor, si la cuenta tiene varios y no envías `emisor`")
+
+
+def _completar(entrada: DTEEntrada, usuario: dict) -> DTEInput:
+    """El `DTEInput` completo: el emisor del JSON o, sin él, el del negocio."""
+    datos_dte = entrada.model_dump(exclude={"rut_emisor", "emisor"})
+    emisor = entrada.emisor or emision.emisor_del_negocio(solicitante(usuario).cuenta_id, entrada.rut_emisor)
+    return DTEInput(**datos_dte, emisor=emisor)
+
+
 class EmitirDTERequest(BaseModel):
-    dte: DTEInput
+    dte: DTEEntrada
     id_externo: Optional[str] = Field(
         None, min_length=1, max_length=100,
-        description="Identificador de la venta en tu producto (pedido, orden). Con el mismo "
+        description="Identificador de la venta en tu sistema (pedido, orden). Con el mismo "
                     "`id_externo`, el mismo JSON devuelve el documento ya emitido en vez de gastar "
                     "otro folio. Ver docs/deploy/PLAN.md, \"Política de folios\".")
+    enviar: bool = Field(
+        True, description="Faro lo envía al SII y sigue su veredicto en segundo plano (GET "
+                          "/dte/{dte_id}/estado). Con false, lo envías tú con POST /dte/{dte_id}/enviar.")
     certificado_p12_b64: Optional[str] = Field(
         None, description="Solo por compatibilidad: sin él se usa el certificado del negocio (keystore).")
     password_certificado: Optional[str] = None
@@ -425,11 +442,14 @@ class EmitirDTEResponse(BaseModel):
     xml_envio_b64: str
     ambiente: str
     mensaje: str
+    envio: Optional[str] = Field(
+        None, description="programado (Faro lo envía), no_solicitado (enviar=false), desactivado "
+                          "(ENVIO_SII) o el estado si ya no estaba por enviar")
 
 
 class PrevisualizarRequest(BaseModel):
-    dte: DTEInput
-    cert_id: int
+    dte: DTEEntrada
+    cert_id: Optional[int] = Field(None, description="Certificado del keystore; sin él, el del negocio emisor")
 
 
 @router.post("/previsualizar", summary="Previsualizar un DTE (firmado+timbrado+PDF) sin enviarlo")
@@ -438,17 +458,28 @@ def previsualizar(
     usuario: dict = Depends(requerir_autenticacion),
 ) -> dict:
     """Genera un DTE FIRMADO + timbrado (TED) + validado XSD + PDF, **sin enviarlo al SII
-    ni consumir folios**. Resuelve el certificado del keystore (`cert_id`) y el CAF activo
-    de la BD para el emisor+tipo. Devuelve `{folio, totales, valido_xsd, xml_b64, pdf_b64}`.
+    ni consumir folios**. Resuelve el certificado (`cert_id`, o el del negocio emisor) y el CAF
+    activo de la BD para el emisor+tipo. El PDF sale marcado **BORRADOR** (fase 5): no se
+    entrega. Devuelve `{folio, totales, valido_xsd, xml_b64, pdf_b64}`.
     """
-    cert = keystore.cargar_certificado(body.cert_id, usuario["id"])
-    caf_db = obtener_caf_activo(body.dte.emisor.rut, body.dte.tipo_dte.value)
+    from core.orchestrator_boleta import TIPOS_BOLETA, OrquestadorBoleta
+    from core.orchestrator import OrquestadorDTE
+    from core.pdf_borrador import marcar_borrador
+    dte = _completar(body.dte, usuario)
+    if body.cert_id is not None:
+        cert = keystore.cargar_certificado(body.cert_id, usuario["id"])
+    else:
+        orq = OrquestadorBoleta() if dte.tipo_dte.value in TIPOS_BOLETA else OrquestadorDTE()
+        cert = emision._certificado(solicitante(usuario), dte.emisor.rut, orq)
+    caf_db = obtener_caf_activo(dte.emisor.rut, dte.tipo_dte.value)
     if not caf_db:
         raise FolioError(
-            f"No hay CAF activo para {body.dte.emisor.rut} tipo {body.dte.tipo_dte.value}. "
+            f"No hay CAF activo para {dte.emisor.rut} tipo {dte.tipo_dte.value}. "
             "Carga un CAF primero.")
     caf = ManejadorCAF(caf_db["caf_xml"].encode("utf-8"))
-    return _previsualizar_dte(body.dte, cert, caf)
+    resultado = _previsualizar_dte(dte, cert, caf)
+    resultado["pdf_b64"] = base64.b64encode(marcar_borrador(base64.b64decode(resultado["pdf_b64"]))).decode("ascii")
+    return resultado
 
 
 @router.post("/emitir", response_model=EmitirDTEResponse, summary="Emitir DTE de forma orquestada")
@@ -456,17 +487,50 @@ def emitir_dte_orquestado(
     body: EmitirDTERequest,
     usuario: dict = Depends(requerir_autenticacion),
 ) -> EmitirDTEResponse:
-    """Emite (timbra, firma y guarda) un DTE o boleta. **No lo envía al SII.**
+    """Emite (timbra, firma y guarda) un DTE o boleta y responde al instante con el folio y el
+    PDF, que ya se puede entregar. Con `enviar` (por defecto), Faro lo envía al SII y sigue su
+    veredicto en segundo plano: consúltalo en `GET /dte/{dte_id}/estado`.
 
     Prevalida sin gastar folio (422), reserva el folio y la venta (`id_externo`) en una
     transacción y genera el documento (`core/servicios/emision.py`). 39/41 salen como
-    EnvioBOLETA (PDF 80mm), el resto como EnvioDTE. 409: la venta está en curso, ya tiene un
-    documento timbrado con otros datos, o el folio pedido ya se usó.
+    EnvioBOLETA (PDF 80mm), el resto como EnvioDTE. `emisor` es opcional: sin él se usa el del
+    negocio. 409: la venta está en curso, ya tiene un documento timbrado con otros datos, o el
+    folio pedido ya se usó.
     """
     cert = None
     if body.certificado_p12_b64 and body.password_certificado:
         cert = _cargar_cert(_decode_b64(body.certificado_p12_b64, "El certificado"),
                             body.password_certificado)
-    resultado = emision.emitir(body.dte, solicitante(usuario), id_externo=body.id_externo,
-                               certificado=cert)
+    resultado = emision.emitir(_completar(body.dte, usuario), solicitante(usuario), id_externo=body.id_externo,
+                               certificado=cert, original=body.dte)
+    resultado["envio"] = envio.programar(resultado["dte_id"]) if body.enviar else "no_solicitado"
     return EmitirDTEResponse(**resultado)
+
+
+# ---- Despacho al SII por documento (fase 5) ----
+
+@router.post("/{dte_id}/enviar", summary="Enviar un documento al SII ahora")
+def enviar_documento(dte_id: int, usuario: dict = Depends(requerir_autenticacion)) -> dict:
+    """Envía el sobre guardado al emitir (facturas y notas por SOAP, boletas por REST) y deja el
+    veredicto en seguimiento. Un documento ya enviado no se reenvía: responde su estado. Sirve
+    para quien emite con `enviar: false` y para reintentar un `envio_fallido`. 409
+    `envio_desactivado` si la instancia no envía al SII (ENVIO_SII)."""
+    exigir_documento_propio(usuario, dte_id)
+    return envio.enviar_ahora(dte_id)
+
+
+@router.get("/{dte_id}/estado", summary="Estado de un documento en el SII")
+def estado_documento(dte_id: int, consultar_sii: bool = False,
+                     usuario: dict = Depends(requerir_autenticacion)) -> dict:
+    """El estado guardado: `generado`, `enviado`, `aceptado`, `aceptado_con_reparos`, `rechazado`,
+    `envio_fallido` o `sin_veredicto`, con TrackID y motivo del SII. Faro lo actualiza solo; con
+    `consultar_sii=true` pregunta al SII en el momento (como mucho cada 30 segundos)."""
+    exigir_documento_propio(usuario, dte_id)
+    return envio.estado(dte_id, consultar_sii=consultar_sii)
+
+
+@router.get("/alertas", summary="Documentos que necesitan atención (administrador)")
+def alertas_despacho() -> dict:
+    """`sin_veredicto` (el SII no responde hace horas), `envio_fallido` (se agotaron los
+    reintentos) y `folios_por_anular` (rechazados: no se reenvían, se informan al SII)."""
+    return envio.alertas()

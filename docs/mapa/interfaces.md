@@ -44,7 +44,8 @@ gestionadas vía `/apikeys` con JWT — una key no puede crear más keys).
 En el fork (fase 4 de `docs/deploy/PLAN.md`) la API key es un token con rol `integracion`:
 `requerir_autenticacion` le niega lo que no esté en `core/autorizacion.py` (403). `db/*` quedó
 como alias obsoleto, solo administrador y fuera de `/docs`: sus rutas viven en `/dte/documentos`,
-`/caf` y `/auditoria` (router `auditoria`).
+`/caf` y `/auditoria` (router `auditoria`). El despacho al SII por documento (fase 5) suma
+`POST /dte/{id}/enviar`, `GET /dte/{id}/estado` y `GET /dte/alertas` (`core/servicios/envio.py`).
 
 Los que importan para emitir:
 - `POST /api/v1/dte/emitir` (`dte.py:281`) — orquestado; **rutea 39/41 a EnvioBOLETA** (`:287`).

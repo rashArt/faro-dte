@@ -39,10 +39,11 @@ _RUTAS_INTEGRACION = {
     ("POST", "/api/v1/apikeys/propia/renovar"),
 }
 # Dentro de los prefijos permitidos, lo que igual queda para el administrador: el listado general
-# de documentos (un token ve solo los suyos, uno por uno).
+# de documentos y las alertas del despacho (un token ve solo los suyos, uno por uno).
 _NEGADO_INTEGRACION = {
     ("GET", "/api/v1/dte/documentos"),
     ("GET", "/api/v1/dte/documentos/emisores"),
+    ("GET", "/api/v1/dte/alertas"),
 }
 
 

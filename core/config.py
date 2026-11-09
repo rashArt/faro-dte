@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any, List, Optional
+from typing import Any, List, Literal, Optional
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -149,6 +149,13 @@ class Settings(BaseSettings):
     login_bloqueo_min: int = Field(default=15, description="Minutos de bloqueo tras los logins fallidos")
     bearer_max_fallos: int = Field(default=20, description="Bearer inválidos por IP antes de responder 429")
     clave_largo_minimo: int = Field(default=12, description="Largo mínimo de una contraseña nueva")
+    # Despacho al SII (docs/deploy/PLAN.md, fase 5): enviar y seguir el veredicto en segundo plano.
+    # `desactivado` (por defecto): se emite igual pero nada sale al SII; para desarrollar con el
+    # CAF y el certificado ficticios. En certificación y producción: `activo`.
+    envio_sii: Literal["activo", "desactivado"] = Field(default="desactivado", description="Envío al SII (ENVIO_SII)")
+    despacho_intervalo_seg: int = Field(default=15, description="Cada cuántos segundos revisa el despacho")
+    envio_max_intentos: int = Field(default=8, description="Envíos fallidos seguidos antes de envio_fallido")
+    veredicto_alerta_horas: int = Field(default=6, description="Horas sin veredicto antes de sin_veredicto")
 
     # ---- Exposición pública acotada ----
     # Host público que SOLO puede ver el buscador de boletas (ej. "boletas.tu-dominio.cl").

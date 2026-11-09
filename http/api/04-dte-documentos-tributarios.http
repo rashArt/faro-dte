@@ -183,48 +183,6 @@ Content-Type: application/json
 {
   "dte": {
     "tipo_dte": 33,
-    "emisor": {
-      "rut": "77777777-7",
-      "razon_social": "EMPRESA DEMO SPA",
-      "giro": "Cafetería",
-      "codigo_actividad": 561000,
-      "direccion": "Calle Ficticia 123",
-      "comuna": "Santiago",
-      "ciudad": "Santiago"
-    },
-    "receptor": {
-      "rut": "76111111-6",
-      "razon_social": "CLIENTE DEMO LTDA"
-    },
-    "items": [
-      {
-        "numero_linea": 1,
-        "nombre": "Servicio de ejemplo",
-        "precio_unitario": 10000
-      }
-    ]
-  },
-  "cert_id": 1
-}
-
-### Emitir DTE de forma orquestada
-# @name emitir_dte_orquestado_api_v1_dte_emitir_post
-POST {{base}}/api/v1/dte/emitir
-Authorization: Bearer {{token}}
-Content-Type: application/json
-
-{
-  "dte": {
-    "tipo_dte": 33,
-    "emisor": {
-      "rut": "77777777-7",
-      "razon_social": "EMPRESA DEMO SPA",
-      "giro": "Cafetería",
-      "codigo_actividad": 561000,
-      "direccion": "Calle Ficticia 123",
-      "comuna": "Santiago",
-      "ciudad": "Santiago"
-    },
     "receptor": {
       "rut": "76111111-6",
       "razon_social": "CLIENTE DEMO LTDA"
@@ -238,3 +196,42 @@ Content-Type: application/json
     ]
   }
 }
+
+### Emitir DTE de forma orquestada
+# @name emitir_dte_orquestado_api_v1_dte_emitir_post
+POST {{base}}/api/v1/dte/emitir
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "dte": {
+    "tipo_dte": 33,
+    "receptor": {
+      "rut": "76111111-6",
+      "razon_social": "CLIENTE DEMO LTDA"
+    },
+    "items": [
+      {
+        "numero_linea": 1,
+        "nombre": "Servicio de ejemplo",
+        "precio_unitario": 10000
+      }
+    ]
+  }
+}
+
+### Enviar un documento al SII ahora
+# @name enviar_documento_api_v1_dte_dte_id_enviar_post
+POST {{base}}/api/v1/dte/{{dte_id}}/enviar
+Authorization: Bearer {{token}}
+
+### Estado de un documento en el SII
+# opcionales: consultar_sii=False
+# @name estado_documento_api_v1_dte_dte_id_estado_get
+GET {{base}}/api/v1/dte/{{dte_id}}/estado
+Authorization: Bearer {{token}}
+
+### Documentos que necesitan atención (administrador)
+# @name alertas_despacho_api_v1_dte_alertas_get
+GET {{base}}/api/v1/dte/alertas
+Authorization: Bearer {{token}}

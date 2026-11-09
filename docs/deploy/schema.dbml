@@ -1,5 +1,5 @@
 // Esquema de la base de Faro (motor Python), generado por tools/generar_dbml.py.
-// Migración: 0003. No editar a mano: regenerar tras cada migración.
+// Migración: 0004. No editar a mano: regenerar tras cada migración.
 // Tipos de SQLite; en PostgreSQL, INTEGER es BIGINT, REAL es DOUBLE PRECISION y BLOB es BYTEA.
 // Las relaciones (Ref) son lógicas: el esquema heredado no declara claves foráneas.
 
@@ -110,14 +110,23 @@ Table dtes {
   intento integer [not null, default: `0`]
   motivo_error text
   origen text
+  seguimiento integer [not null, default: `0`]
+  intentos_envio integer [not null, default: `0`]
+  proxima_accion text
+  tomado_hasta text
+  enviado_en text
+  consultado_en text
+  veredicto_en text
+  motivo_sii text
   indexes {
     (rut_emisor, tipo_dte, folio) [unique]
+    (seguimiento, estado, proxima_accion) [name: 'idx_dtes_despacho']
     (estado) [name: 'idx_dtes_estado']
     (fecha_emision) [name: 'idx_dtes_fecha']
     (rut_emisor) [name: 'idx_dtes_rut_emisor']
     (tipo_dte, folio) [name: 'idx_dtes_tipo_folio']
   }
-  Note: 'Documentos emitidos: uno por folio (UNIQUE rut_emisor + tipo_dte + folio). Guarda el XML firmado. estado reservado/error = sin timbre (el folio se reusa); intento nombra la carpeta de archivos. origen = quién lo emitió por /dte/emitir (usuario:<id> o apikey:<id>; fork, 0003).'
+  Note: 'Documentos emitidos: uno por folio (UNIQUE rut_emisor + tipo_dte + folio). Guarda el XML firmado. estado reservado/error = sin timbre (el folio se reusa); intento nombra la carpeta de archivos. origen = quién lo emitió por /dte/emitir (usuario:<id> o apikey:<id>; fork, 0003). Despacho al SII (fork, 0004): seguimiento, intentos_envio, proxima_accion, tomado_hasta, enviado_en, consultado_en, veredicto_en, motivo_sii; estados enviado, aceptado, aceptado_con_reparos, rechazado, envio_fallido, sin_veredicto.'
 }
 
 Table emisiones {
@@ -132,7 +141,7 @@ Table emisiones {
     (origen, id_externo) [unique]
     (dte_id) [name: 'ix_emisiones_dte_id']
   }
-  Note: 'Ventas del producto (origen + id_externo): huella del JSON y el documento que las atiende. dte_id NULL si el folio de un intento fallido pasó a otra venta (fork, 0002).'
+  Note: 'Ventas de cada integración (origen + id_externo): huella del JSON y el documento que las atiende. dte_id NULL si el folio de un intento fallido pasó a otra venta (fork, 0002).'
 }
 
 Table folios_gestion {

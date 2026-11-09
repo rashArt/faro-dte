@@ -35,14 +35,15 @@ Implementación: [`core/errors.py`](../core/errors.py) (errores de dominio) +
 | `conflicto` | 409 | El estado impide la operación. | `ConflictoError` |
 | `folio` | 409 | Folio fuera de rango / CAF inválido o vencido. | `FolioError` |
 | `sin_folios` | 409 | Timbraje agotado o bloqueado (anti-acaparamiento). | `SinFoliosError` |
-| `en_curso` | 409 | Otra petición está emitiendo la misma venta (`id_externo`); reintenta en segundos. | `ConflictoError` (servicio de emisión) |
+| `en_curso` | 409 | Otra petición está emitiendo la misma venta (`id_externo`) o enviando el mismo documento; reintenta en segundos. | `ConflictoError` (emisión y despacho) |
+| `envio_desactivado` | 409 | `POST /dte/{id}/enviar` en una instancia con `ENVIO_SII=desactivado`: nada sale al SII. | `ConflictoError` (despacho, `core/servicios/envio.py`) |
 | `ya_emitido` | 409 | La venta (`id_externo`) ya tiene un documento timbrado con otros datos: se corrige con NC/ND. `detalle`: `dte_id`, `folio`, `estado`. | `ConflictoError` (servicio de emisión) |
 | `caf` | 422 | CAF inválido, corrupto, de otro RUT/tipo, o vencido. | `CAFError` |
 | `certificado` | 422 | El `.p12`/`.pfx` no carga (clave errada, vencido). | `CertificadoError` |
 | `autenticacion` | 401 | Credenciales faltantes o inválidas (token revocado, clave vieja tras renovar, JWT anterior a un cambio de contraseña). Trae `WWW-Authenticate: Bearer`. | `AutenticacionError` |
 | `autorizacion` | 403 | Autenticado pero sin permiso: un token de integración fuera de su rol (`core/autorizacion.py`). | `AutorizacionError` |
 | `demasiadas_solicitudes` | 429 | Demasiados logins fallidos (usuario+IP) o Bearer inválidos (IP). Espera los segundos de `Retry-After`. | `HTTPException` (`core/limites.py`) |
-| `sii_comunicacion` | 502 | Fallo hablando con el SII (red, timeout, HTTP 5xx). | `SIIError` |
+| `sii_comunicacion` | 502 | Fallo hablando con el SII (red, timeout, HTTP 5xx), o un envío a mano que el SII no recibió (`detalle`: `dte_id`, `intentos_envio`; el despacho lo reintenta). | `SIIError` |
 | `sii_rechazo` | 422 | El SII procesó y **rechazó** el DTE (trae `codigo_sii`). | `SIIRechazoError` |
 | `error_emision` | 500 | Falló la generación después de reservar el folio. `detalle`: `dte_id`, `folio`, `estado: error`; el mismo `id_externo` lo reintenta con ese folio. | `DTEChileError` (servicio de emisión) |
 | `error_interno` | 500 | Bug/fallo inesperado. Traza al log, mensaje genérico. | (catch-all) |

@@ -1,8 +1,9 @@
-# Flujo 2 — Emitir como un producto: certificado del negocio e id_externo (fase 2 de docs/deploy/PLAN.md).
+# Flujo 2 — Emitir como una integración: certificado del negocio e id_externo (fase 2 de docs/deploy/PLAN.md).
 # Escrito a mano. Ejecuta los bloques en orden (Ctrl+Alt+R sobre cada uno).
 # Usa EMPRESA DEMO SPA (77777777-7) con el CAF y el certificado ficticios del corpus: firma y
-# timbra de verdad, pero nunca envía al SII. Corre solo contra una instancia local o de prueba.
-# La fase 5 agrega aquí el envío al SII y la consulta del veredicto.
+# timbra de verdad. Corre solo contra una instancia local o de prueba con ENVIO_SII=desactivado
+# (por defecto): nada sale al SII. Los pasos 13 a 18 son la fase 5 (emisor del negocio, estado,
+# envío y BORRADOR); con ENVIO_SII=activo y CAF y certificado reales, el mismo flujo envía de verdad.
 
 @clave = {{$dotenv FARO_CLAVE}}
 @clave_cert = {{$dotenv FARO_CLAVE_CERT}}
@@ -151,4 +152,54 @@ Content-Type: application/json
 
 ### 12. La clave privada del certificado NO sale con un JWT → 403 (antes: 200, hallazgo #8)
 GET {{base}}/api/v1/keystore/negocios/1/contexto-emision
+Authorization: Bearer {{token}}
+
+### 13. Datos del emisor en el negocio (una vez): con ellos, emitir no necesita `emisor`
+PUT {{base}}/api/v1/keystore/negocios/1
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"giro": "Cafeteria", "codigo_actividad": 561000, "direccion": "Calle Ficticia 123",
+ "comuna": "Santiago", "ciudad": "Santiago"}
+
+### 14. Emitir SIN emisor → 200; "envio": "desactivado" en local ("programado" con ENVIO_SII=activo)
+# @name sin_emisor
+POST {{base}}/api/v1/dte/emitir
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "id_externo": "{{venta}}-b",
+  "dte": {
+    "tipo_dte": 33,
+    "receptor": {"rut": "76111111-6", "razon_social": "CLIENTE DEMO LTDA", "giro": "Comercio",
+                 "direccion": "Av Siempreviva 742", "comuna": "Santiago"},
+    "items": [{"numero_linea": 1, "nombre": "Servicio mensual", "cantidad": 1, "precio_unitario": 10000}]
+  }
+}
+
+### 15. Estado del documento → "generado" en local; con envío activo: enviado → aceptado/rechazado
+GET {{base}}/api/v1/dte/{{sin_emisor.response.body.dte_id}}/estado
+Authorization: Bearer {{token}}
+
+### 16. Enviar a mano → 409 "envio_desactivado" en local (con envío activo: 200, estado "enviado")
+POST {{base}}/api/v1/dte/{{sin_emisor.response.body.dte_id}}/enviar
+Authorization: Bearer {{token}}
+
+### 17. Previsualizar sin emisor ni cert_id → 200; el PDF (pdf_b64) sale marcado BORRADOR
+POST {{base}}/api/v1/dte/previsualizar
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "dte": {
+    "tipo_dte": 33,
+    "receptor": {"rut": "76111111-6", "razon_social": "CLIENTE DEMO LTDA", "giro": "Comercio",
+                 "direccion": "Av Siempreviva 742", "comuna": "Santiago"},
+    "items": [{"numero_linea": 1, "nombre": "Servicio mensual", "cantidad": 1, "precio_unitario": 10000}]
+  }
+}
+
+### 18. Alertas del despacho (administrador): sin veredicto, envíos fallidos, folios por anular
+GET {{base}}/api/v1/dte/alertas
 Authorization: Bearer {{token}}

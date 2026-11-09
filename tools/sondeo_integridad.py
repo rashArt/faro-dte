@@ -111,7 +111,7 @@ def main() -> int:
     veredicto(len(folios) == 20 and len(set(folios)) == 20 and folios == list(range(folios[0], folios[0] + 20)),
               f"{len(folios)}/20 emitidas, folios únicos y consecutivos: {folios[0]}..{folios[-1]}" if folios else "sin emisiones")
 
-    print("\n3. Reintento de la MISMA petición con su id_externo (el producto no recibió la respuesta)")
+    print("\n3. Reintento de la MISMA petición con su id_externo (la integración no recibió la respuesta)")
     c = cuerpo("Factura pedido #123")
     c["id_externo"] = "pedido-123"
     (_, a), (_, b) = emitir(c), emitir(c)
@@ -165,6 +165,14 @@ def main() -> int:
     fallos = [httpx.post(f"{B}/api/v1/auth/login", json={"username": "sondeo_bloqueo", "password": "x"}).status_code
               for _ in range(6)]
     veredicto(fallos[-1] == 429, f"logins fallidos seguidos: {fallos} (el último, 429)")
+
+    print("\n8. Despacho al SII (fase 5; la imagen arranca con ENVIO_SII=desactivado)")
+    s, j = emitir(cuerpo("Despacho"))
+    estado = httpx.get(f"{B}/api/v1/dte/{j.get('dte_id')}/estado", headers=h).json() if s == 200 else {}
+    veredicto(s == 200 and j.get("envio") == "desactivado" and estado.get("estado") == "generado",
+              f"emitir responde envio={j.get('envio')!r}, estado={estado.get('estado')!r} (nada sale al SII)")
+    r = httpx.post(f"{B}/api/v1/dte/{j.get('dte_id')}/enviar", headers=h)
+    veredicto(r.status_code == 409, f"enviar a mano con el envío desactivado -> {r.status_code} (esperado 409)")
 
     print(f"\n{len(hallazgos)} hallazgo(s).")
     return 1 if hallazgos else 0

@@ -1,7 +1,7 @@
 # Despliegue por cliente (servidor, Docker, motor Python)
 
-Guía para desplegar Faro como **motor de facturación detrás de tus propios productos**: tus
-productos llaman a la API y Faro firma, timbra, envía al SII y guarda. Una instancia por
+Guía para desplegar Faro como **motor de facturación detrás de tus propios sistemas** (las integraciones: punto de venta,
+tienda, ERP): llaman a la API y Faro firma, timbra, envía al SII y guarda. Una instancia por
 empresa cliente, con la API solo en la red interna y sin la interfaz gráfica a la vista.
 
 | Archivo | Para qué |
@@ -26,9 +26,9 @@ empresa cliente, con la API solo en la red interna y sin la interfaz gráfica a 
 |---|---|---|
 | Motor | **Python** (`Dockerfile`, `python:3.12-slim`) | Es la referencia del proyecto, trae Swagger (`/docs`) y es la imagen que el autor usa en su propio servidor (`docs/COMPARACION-PYTHON-GO.md`). El binario Rust (`nucleo-servidor servir`) tiene el mismo contrato de API y es el destino final del port, pero no tiene imagen Docker oficial. |
 | Aislamiento | **Una instancia por empresa** (contenedor, volumen y `.env` propios) | Faro no es multi-tenant: usuarios y API keys no se separan por empresa. Una instancia por cliente aísla datos, certificados y secretos. |
-| Exposición | **API solo en la red de Docker**; nada público por defecto | `docs/PLATAFORMA.md` §5: no exponer la API REST a Internet. Tus productos la llaman por la red interna. |
+| Exposición | **API solo en la red de Docker**; nada público por defecto | `docs/PLATAFORMA.md` §5: no exponer la API REST a Internet. Tus integraciones la llaman por la red interna. |
 | Interfaz gráfica | **No se publica** | Las páginas (`/app`, `/docs`, `/onboarding`, `/apikeys`…) existen dentro del contenedor, pero sin puerto ni ruta de Traefik nadie de afuera llega a ellas. Para aprender, usa la instancia local. |
-| Buscador público | Lo sirve **tu producto** con `/consulta/api`; opcional por Traefik | Ver [`INTEGRACION.md`](INTEGRACION.md#consulta-pública-de-boletas). |
+| Buscador público | Lo sirve **tu integración** con `/consulta/api`; opcional por Traefik | Ver [`INTEGRACION.md`](INTEGRACION.md#consulta-pública-de-boletas). |
 | Base de datos | **PostgreSQL** en producción, SQLite en local y pruebas | Las dos funcionan desde la fase 1 de [`PLAN.md`](PLAN.md), con el esquema en migraciones de Alembic. El compose por cliente con Postgres es la fase 6; mientras tanto, [`docker-compose.postgres.example.yml`](../../docker-compose.postgres.example.yml). |
 | MCP | **Fuera** de este despliegue | `mcp_server.py` es un proceso aparte y no va en la imagen. |
 
@@ -44,7 +44,7 @@ empresa cliente, con la API solo en la red interna y sin la interfaz gráfica a 
    ┌───────────────────┼──────────────────────────────────────────┐
    │ red Docker        │                                          │
    │  ┌──────────────┐ │  http://faro-acme:8000/api/v1/...        │
-   │  │ tu producto  ├─┼──────────────► ┌──────────────────┐      │
+   │  │ integración  ├─┼──────────────► ┌──────────────────┐      │
    │  │ (backend)    │ │                │ faro-acme        │──────┼──► SII (maullín / palena)
    │  └──────────────┘ └──────────────► │ uvicorn 1 worker │      │
    │                                    │ volumen: storage │      │
@@ -52,8 +52,8 @@ empresa cliente, con la API solo en la red interna y sin la interfaz gráfica a 
    └──────────────────────────────────────────────────────────────┘
 ```
 
-Cada cliente tiene su contenedor `faro-<cliente>` en una red compartida con tus productos.
-Solo el backend de tu producto conoce la API key.
+Cada cliente tiene su contenedor `faro-<cliente>` en una red compartida con tus integraciones.
+Solo el backend de cada integración conoce su token.
 
 ## Local: para aprender
 
@@ -74,14 +74,14 @@ La práctica funciona sin configurar nada más. Para probar contra el SII de cer
 
 ## Desplegar un cliente
 
-Ejemplo con el cliente `acme` y una red compartida `productos`, donde también viven tus productos.
+Ejemplo con el cliente `acme` y una red compartida `integraciones`, donde también viven tus sistemas.
 
 **1. Imagen.** Constrúyela una vez por versión y etiquétala. No compiles en cada cliente.
 
 ```bash
 git -C /srv/faro-dte pull
 docker build -t faro-dte:1.1.0 /srv/faro-dte
-docker network create productos   # una sola vez por servidor
+docker network create integraciones   # una sola vez por servidor
 ```
 
 **2. Carpeta del cliente.**
@@ -110,12 +110,12 @@ certificados guardados; si se pierde, hay que volver a subirlos.
 services:
   faro:
     image: faro-dte:1.1.0          # en vez de `build:`
-    container_name: faro-acme      # nombre que usan tus productos
+    container_name: faro-acme      # nombre que usan tus integraciones
     # ... (lo demás igual al ejemplo)
-    networks: [productos]
+    networks: [integraciones]
 
 networks:
-  productos:
+  integraciones:
     external: true
 ```
 
@@ -126,18 +126,18 @@ Quita el bloque `build:` y no publiques `ports`.
 ```bash
 docker compose -p faro-acme up -d
 docker compose -p faro-acme logs faro | grep -E "Ambiente SII|Base de datos|SEGURIDAD"
-docker run --rm --network productos curlimages/curl -s http://faro-acme:8000/health
+docker run --rm --network integraciones curlimages/curl -s http://faro-acme:8000/health
 ```
 
 `Base de datos` tiene que decir `sqlite:////app/storage/dte_database.db` (o la URL de Postgres, sin la contraseña). Con
 `SII_AMBIENTE=produccion` el motor **no arranca** si queda algún aviso `SEGURIDAD`.
 
 **6. Alta del cliente y API key.** Sigue [`INTEGRACION.md`](INTEGRACION.md): certificado,
-negocio, diagnóstico, folios y una API key para cada producto.
+negocio, diagnóstico, folios y un token para cada integración.
 
 ### Publicar el buscador de Faro con Traefik (opcional)
 
-Solo si no lo va a servir tu producto. En el `.env` del cliente:
+Solo si no lo va a servir tu integración. En el `.env` del cliente:
 `DOMINIO_PUBLICO_BOLETAS=boletas.cliente.ejemplo.cl`. En el compose, descomenta las `labels` y
 la red `traefik` del ejemplo con ese mismo host, y agrega `FORWARDED_ALLOW_IPS=*` a
 `environment` para que uvicorn confíe en las cabeceras de Traefik. El middleware de `main.py`

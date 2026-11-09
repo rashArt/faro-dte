@@ -37,7 +37,7 @@ from core import datos, keystore, reloj
 from core.caf import ManejadorCAF
 from core.config import settings
 from core.crypto import CertificadoDigital
-from core.dte import DTEInput
+from core.dte import DTEInput, EmisorModel
 from core.errors import (
     AutorizacionError,
     ConflictoError,
@@ -85,18 +85,21 @@ class _YaEmitido(Exception):
 # Entrada
 # ---------------------------------------------------------------------------------------------
 def emitir(dte_input: DTEInput, solicitante: Solicitante, *, id_externo: Optional[str] = None,
-           certificado: Optional[CertificadoDigital] = None) -> dict:
-    """Emite (timbra, firma y guarda) un documento. No lo envía al SII.
+           certificado: Optional[CertificadoDigital] = None, original=None) -> dict:
+    """Emite (timbra, firma y guarda) un documento. No lo envía al SII: eso lo hace el despacho
+    (`core/servicios/envio.py`) si quien llama lo programa.
 
     Devuelve el mismo diccionario que `core.orchestrator.emitir_documento`, más `estado`,
     `id_externo` y `repetido` (True si es el documento que ya existía para ese `id_externo`).
+    `original` es el JSON tal como llegó, si la ruta lo completó (emisor del negocio): la huella
+    del reintento sale de él, así un cambio en los datos del negocio no parece una corrección.
     """
     tipo = dte_input.tipo_dte.value
     explicito = dte_input.folio if dte_input.folio > 0 else None
     if explicito and not solicitante.es_admin:
         raise AutorizacionError("Solo el administrador puede elegir el folio; omite `folio` o usa 0.",
                                 detalle={"folio": explicito})
-    huella = _huella(dte_input)
+    huella = _huella(original if original is not None else dte_input)
 
     # Atajo sin candado: el reintento de una venta ya timbrada no paga el ensayo.
     if id_externo:
@@ -127,6 +130,39 @@ def emitir(dte_input: DTEInput, solicitante: Solicitante, *, id_externo: Optiona
     log.info("emitido dte_id=%s tipo=%s folio=%s intento=%s", reserva.dte_id, tipo, reserva.folio,
              reserva.intento)
     return _respuesta(reserva.dte_id, id_externo, repetido=False)
+
+
+# Datos del negocio que el SII exige en el emisor (fase 5: `emisor` opcional en el JSON).
+_CAMPOS_EMISOR = ("razon_social", "giro", "codigo_actividad", "direccion", "comuna", "ciudad")
+
+
+def emisor_del_negocio(cuenta_id: Optional[int], rut: Optional[str] = None) -> EmisorModel:
+    """El emisor armado con los datos del negocio (pantalla "Mi empresa", `PUT
+    /keystore/negocios/{id}`). Sin `rut`, el único negocio de la cuenta. 422 si hay varios y no
+    se dice cuál, si no existe, o si le faltan datos que el SII exige."""
+    from core.negocios import listar_negocios
+    negocios = listar_negocios(cuenta_id) if cuenta_id is not None else []
+    if rut:
+        negocios = [n for n in negocios if n["rut"] == rut]
+    if not negocios:
+        raise ValidacionError("No hay negocio para emitir sin `emisor`: créalo en el keystore o envía `emisor`.",
+                              detalle={"rut_emisor": rut})
+    if len(negocios) > 1:
+        raise ValidacionError("La cuenta tiene varios negocios: indica `rut_emisor` o envía `emisor`.",
+                              detalle={"negocios": [n["rut"] for n in negocios]})
+    neg = negocios[0]
+    faltan = [c for c in _CAMPOS_EMISOR if neg.get(c) in (None, "")]
+    if faltan:
+        raise ValidacionError(
+            f"Al negocio {neg['rut']} le faltan datos del emisor: {', '.join(faltan)}. Complétalos con "
+            f"PUT /api/v1/keystore/negocios/{neg['id']} o envía `emisor`.",
+            detalle={"negocio_id": neg["id"], "faltan": faltan})
+    try:
+        return EmisorModel(rut=neg["rut"], telefono=neg.get("telefono") or None, email=neg.get("email") or None,
+                           **{c: neg[c] for c in _CAMPOS_EMISOR})
+    except ValueError as e:   # p. ej. un giro de más de 80 caracteres
+        raise ValidacionError(f"Los datos del emisor del negocio {neg['rut']} no son válidos: {e}",
+                              detalle={"negocio_id": neg["id"]}) from e
 
 
 # ---------------------------------------------------------------------------------------------

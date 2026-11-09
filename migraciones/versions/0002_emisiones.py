@@ -8,7 +8,7 @@ Fase 2 de docs/deploy/PLAN.md ("Política de folios"). Extensión del fork: el m
 Rust no la tienen (`tools/esquema_dorado.py` compara contra `0001`). Sus INSERT en `dtes` no
 nombran las columnas nuevas y toman el valor por defecto.
 
-- `emisiones`: una fila por venta del producto (`origen` + `id_externo`). Guarda la huella del
+- `emisiones`: una fila por venta de la integración (`origen` + `id_externo`). Guarda la huella del
   JSON (reintento o corrección) y el documento que la atiende. `dte_id` queda NULL si el folio
   de un intento fallido pasó a otra venta.
 - `dtes.intento`: número del intento de generación sobre la fila. Nombra la carpeta de sus

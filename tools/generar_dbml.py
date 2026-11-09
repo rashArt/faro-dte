@@ -27,7 +27,10 @@ DESTINO = RAIZ / "docs" / "deploy" / "schema.dbml"
 NOTAS = {
     "dtes": "Documentos emitidos: uno por folio (UNIQUE rut_emisor + tipo_dte + folio). Guarda el XML firmado. "
             "estado reservado/error = sin timbre (el folio se reusa); intento nombra la carpeta de archivos. "
-            "origen = quién lo emitió por /dte/emitir (usuario:<id> o apikey:<id>; fork, 0003).",
+            "origen = quién lo emitió por /dte/emitir (usuario:<id> o apikey:<id>; fork, 0003). "
+            "Despacho al SII (fork, 0004): seguimiento, intentos_envio, proxima_accion, tomado_hasta, "
+            "enviado_en, consultado_en, veredicto_en, motivo_sii; estados enviado, aceptado, "
+            "aceptado_con_reparos, rechazado, envio_fallido, sin_veredicto.",
     "cafs": "Rangos de folios autorizados por el SII. folio_siguiente es el contador atómico (L7).",
     "audit_log": "Bitácora de acciones (emisión, envío, CAF) y de cada petición que cambia algo: actor "
                  "(usuario:<id> o apikey:<id>), método, ruta, código HTTP e IP; nunca el cuerpo (fork, 0003).",
@@ -43,7 +46,7 @@ NOTAS = {
     "negocios": "Empresas emisoras de la cuenta y sus datos de carátula; cert_id es el certificado con que firman.",
     "rcv_documentos": "Registro de Compras y Ventas bajado del SII.",
     "resolucion_cache": "Resolución SII de cada emisor por ambiente (caché de la consulta pública).",
-    "emisiones": "Ventas del producto (origen + id_externo): huella del JSON y el documento que las atiende. "
+    "emisiones": "Ventas de cada integración (origen + id_externo): huella del JSON y el documento que las atiende. "
                  "dte_id NULL si el folio de un intento fallido pasó a otra venta (fork, 0002).",
 }
 
