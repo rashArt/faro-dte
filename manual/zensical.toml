@@ -1,0 +1,112 @@
+# Manual de la API de Faro para integraciones (sitio estático con Zensical).
+# Público: quien conecta un sistema (punto de venta, tienda web, ERP) a una instancia de Faro, y
+# quien le da soporte. La documentación de desarrollo del motor sigue en docs/ y NO va aquí.
+#
+# Vista previa local:  docker compose -f manual/compose.yml up      -> http://127.0.0.1:8001
+# Publicación:         .github/workflows/manual.yml (GitHub Pages)
+
+[project]
+site_name = "Faro · Manual de la API"
+site_description = "Cómo integrar tu sistema con la API de facturación electrónica de Faro"
+site_url = "https://rashart.github.io/faro-dte/"
+copyright = "Faro · Datos de ejemplo ficticios"
+
+nav = [
+  { "Inicio" = "index.md" },
+  { "Empezar" = [
+    { "Cómo funciona" = "empezar/como-funciona.md" },
+    { "Primeros pasos" = "empezar/primeros-pasos.md" },
+    { "Autenticación" = "empezar/autenticacion.md" },
+  ] },
+  { "Guías" = [
+    { "Configurar la empresa" = "guias/configurar-empresa.md" },
+    { "Emitir un documento" = "guias/emitir.md" },
+    { "Seguir el veredicto del SII" = "guias/seguir-veredicto.md" },
+    { "Reintentos e idempotencia" = "guias/idempotencia.md" },
+    { "Corregir o anular" = "guias/corregir-anular.md" },
+    { "Previsualizar sin gastar folios" = "guias/previsualizar.md" },
+    { "Enviar tú mismo al SII" = "guias/envio-manual.md" },
+    { "Consultar lo emitido" = "guias/consultar.md" },
+    { "Consulta pública de boletas" = "guias/consulta-publica.md" },
+  ] },
+  { "Referencia" = [
+    { "Rutas" = "referencia/rutas.md" },
+    { "El documento (JSON)" = "referencia/documento.md" },
+    { "Estados" = "referencia/estados.md" },
+    { "Errores" = "referencia/errores.md" },
+    { "Ambientes" = "referencia/ambientes.md" },
+  ] },
+  { "Soporte" = [
+    { "Diagnóstico de problemas" = "soporte/diagnostico.md" },
+    { "Preguntas frecuentes" = "soporte/preguntas.md" },
+    { "Glosario" = "soporte/glosario.md" },
+  ] },
+]
+
+[project.theme]
+language = "es"
+features = [
+  "content.code.annotate",
+  "content.code.copy",
+  "content.tabs.link",
+  "content.tooltips",
+  "navigation.footer",
+  "navigation.indexes",
+  "navigation.instant",
+  "navigation.path",
+  "navigation.sections",
+  "navigation.tabs",
+  "navigation.top",
+  "navigation.tracking",
+  "search.highlight",
+  "toc.follow",
+]
+
+[project.theme.icon]
+logo = "lucide/lighthouse"
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme)"
+toggle.icon = "lucide/sun-moon"
+toggle.name = "Usar modo claro"
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: light)"
+scheme = "default"
+primary = "indigo"
+accent = "indigo"
+toggle.icon = "lucide/sun"
+toggle.name = "Usar modo oscuro"
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: dark)"
+scheme = "slate"
+primary = "indigo"
+accent = "indigo"
+toggle.icon = "lucide/moon"
+toggle.name = "Seguir al sistema"
+
+[project.markdown_extensions]
+abbr = {}
+admonition = {}
+attr_list = {}
+def_list = {}
+footnotes = {}
+md_in_html = {}
+tables = {}
+toc.permalink = true
+pymdownx.betterem = {}
+pymdownx.details = {}
+pymdownx.highlight.anchor_linenums = true
+pymdownx.highlight.pygments_lang_class = true
+pymdownx.inlinehilite = {}
+pymdownx.keys = {}
+pymdownx.mark = {}
+pymdownx.smartsymbols = {}
+pymdownx.snippets.base_path = ["incluir"]
+pymdownx.snippets.auto_append = ["glosario.md"]
+pymdownx.superfences.custom_fences = [
+  { name = "mermaid", class = "mermaid", format = "pymdownx.superfences.fence_code_format" },
+]
+pymdownx.tabbed.alternate_style = true
+pymdownx.tasklist.custom_checkbox = true
