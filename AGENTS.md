@@ -15,8 +15,8 @@ python setup.py
 # Iniciar servidor
 uvicorn main:app --reload --port 8000
 
-# Con Docker (docker-compose.yml es local e ignorado: se copia del ejemplo)
-cp docker-compose.example.yml docker-compose.yml && docker compose up -d
+# Con Docker: desarrollo local (PostgreSQL, localhost:8000). Un cliente usa docker-compose.prod.yml (docs/deploy/README.md)
+cp .env.example .env && docker compose -f docker-compose.dev.yml up -d --build
 ```
 
 **Usuario admin:** se crea en el primer arranque con una **contraseña aleatoria** que se
@@ -116,23 +116,25 @@ curl -X POST http://localhost:8000/api/v1/auth/login \
 ## Docker
 
 ```bash
-# Primera vez: cada despliegue tiene su docker-compose.yml (ignorado por git)
-cp .env.example .env
-cp docker-compose.example.yml docker-compose.yml   # descomenta `ports` para usarlo local
+# Desarrollo local: docker-compose.dev.yml (PostgreSQL, puertos solo en localhost, SQLite comentado).
+# Un cliente: docker-compose.prod.yml + docs/deploy/cliente.env.example (docs/deploy/README.md).
+cp .env.example .env            # COMPOSE_FILE=docker-compose.dev.yml en .env evita el -f
 
 # Build y run
-docker compose up -d --build
+docker compose -f docker-compose.dev.yml up -d --build
 
 # Logs
-docker compose logs -f faro
+docker compose -f docker-compose.dev.yml logs -f faro
 
 # Detener
-docker compose down
+docker compose -f docker-compose.dev.yml down
 ```
 
-Volumen persistente `faro-data` → `/app/storage`. La base va ahí porque el compose fija
-`DATABASE_URL=sqlite:////app/storage/dte_database.db`; con el default quedaba fuera del volumen
-y se perdía al recrear el contenedor. Despliegue por cliente (red interna, Traefik, Postgres):
+Volumen persistente `faro-data` → `/app/storage` (XML y PDF). El compose de desarrollo usa
+PostgreSQL (volumen `pg-data`). Con SQLite, la base va en `storage/` (la imagen fija
+`DATABASE_URL=sqlite:////app/storage/dte_database.db`): con el default quedaba fuera del volumen
+y se perdía al recrear el contenedor. La imagen corre como usuario `faro` (UID 10001).
+Despliegue por cliente (red interna, Postgres, migración explícita, `tools/respaldo.sh`):
 [`docs/deploy/`](docs/deploy/README.md).
 
 ## Common Tasks

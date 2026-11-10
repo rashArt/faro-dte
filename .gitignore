@@ -72,8 +72,10 @@ AuthKey_*
 *.bundle
 .auditoria-local.txt
 
-# Docker Compose: cada despliegue (local o de un cliente) tiene el suyo, copiado de
-# docker-compose.example.yml. Ver docs/deploy/README.md.
+# Docker Compose: los del repo son docker-compose.dev.yml y docker-compose.prod.yml. Una copia
+# local o la de un cliente (docker-compose.yml) no se versiona. Ver docs/deploy/README.md.
+# Respaldos de una instancia (tools/respaldo.sh): llevan secretos.
+respaldos/
 docker-compose.yml
 docker-compose.override.yml
 compose.yml

@@ -190,7 +190,7 @@ destino final, que corre dentro de la app de Faro. Cada port se midió, no se su
 |---|---|
 | **Faro, la app de escritorio** (macOS hoy; Windows y Linux se construyen desde el mismo código; motor Rust adentro, sin instalar nada más) | quien factura desde su computador, y quien está aprendiendo |
 | **Binario** `nucleo-servidor servir` en Rust o en Go (macOS, Linux, Windows; un archivo) | un servidor propio, una Raspberry, un VPS chico, o la sala de clases (sirve la misma interfaz en `/app`) |
-| **Docker** con el motor Python (`docker-compose.example.yml`; despliegue por cliente en [`docs/deploy/`](docs/deploy/README.md)) | quien ya opera con contenedores |
+| **Docker** con el motor Python (`docker-compose.dev.yml`; despliegue por cliente con `docker-compose.prod.yml` en [`docs/deploy/`](docs/deploy/README.md)) | quien ya opera con contenedores |
 | **Tu IA** (Claude Code, app de Claude, Cursor, VS Code, Windsurf, Gemini CLI, Codex): `nucleo-mcp instalar --en …` o la pestaña "Tu IA" de la app | operar la facturación conversando, todo local |
 
 ```bash
@@ -203,8 +203,8 @@ destino final, que corre dentro de la app de Faro. Cada port se midió, no se su
 # API en http://127.0.0.1:8000/api/v1, la misma interfaz de la app en /app
 
 # Python (la referencia): Docker o venv
-cp .env.example .env && cp docker-compose.example.yml docker-compose.yml   # descomenta `ports`
-docker compose up -d                            # Swagger en /docs, interfaz en /app
+cp .env.example .env
+docker compose -f docker-compose.dev.yml up -d --build   # Swagger en /docs, interfaz en /app
 python -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt
 python setup.py && uvicorn main:app --reload --port 8000
 ```

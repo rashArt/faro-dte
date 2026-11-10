@@ -1,6 +1,6 @@
 # Plan del fork: Faro como API de facturación para integraciones
 
-> **Estado (2026-11-09):** fases 0 a 5 hechas; lo demás, pendiente salvo lo marcado ✅. Rama de
+> **Estado (2026-11-10):** fases 0 a 6 hechas; lo demás, pendiente salvo lo marcado ✅. Rama de
 > trabajo: `servidor-produccion`. Los hallazgos están **verificados en vivo** contra la imagen
 > Docker del motor Python (`tools/sondeo_integridad.py`).
 >
@@ -301,9 +301,33 @@ boletas en producción); faltaba unirlo a la API del servidor por documento.
   certificado reales (envío, veredicto, rechazo de boleta con su código). Por verificar ahí: si la
   factura debe estar aceptada antes de entregarla al receptor.
 
-### Fase 6 — Despliegue (al final)
-`docker-compose.example.yml` con Postgres (y Redis opcional), `alembic upgrade head` como paso
-explícito, respaldo con `pg_dump` + volumen `storage/` + `.env`.
+### Fase 6 — Despliegue ✅ (2026-11-10)
+Paquete para levantar la instancia de un cliente igual cada vez, con respaldo y restauración
+probados. No cambia la API ni la base. Guía: [`README.md`](README.md).
+
+- **Decidido (2026-11-10):** un proceso de uvicorn por instancia (el RVD y la reposición de folios
+  no tienen candado entre procesos; Redis queda comentado); la imagen se construye en el VPS, sin
+  registro; el respaldo lo deja un script, sin S3 por ahora; ninguna página pública (el buscador lo
+  sirve la integración); en el repo, un compose de desarrollo y uno de producción.
+- ✅ **`Dockerfile`:** usuario `faro` (UID 10001), sin `.env` dentro de la imagen y SQLite por
+  defecto en `storage/` (el usuario no escribe en `/app`).
+- ✅ **`docker-compose.prod.yml`:** `db` (PostgreSQL 17) → `migrar` (`alembic upgrade head`, una
+  vez) → `faro`. Sin puertos publicados; la base en una red interna sin salida; Faro en la red
+  externa `integraciones` con el nombre del proyecto (`faro-acme`). Exige `COMPOSE_PROJECT_NAME`,
+  `FARO_VERSION`, `POSTGRES_PASSWORD`, `SII_AMBIENTE` y `ENVIO_SII`. Logs rotados y límite de
+  memoria de 1 GiB por contenedor.
+- ✅ **`docker-compose.dev.yml`** (antes `docker-compose.example.yml`): SQLite en localhost,
+  PostgreSQL comentado y el manual de la API como perfil. Se borró `docker-compose.postgres.example.yml`.
+- ✅ **`cliente.env.example`** con las variables de la instancia, `ENVIO_SII=activo` y
+  `POSTGRES_PASSWORD`.
+- ✅ **`tools/respaldo.sh`:** `respaldar` (pg_dump + `storage/` + `.env` + compose + manifiesto,
+  verificados y con retención) y `restaurar` (confirma, respalda antes lo que hay, se niega con otra
+  `DTE_MASTER_KEY`, migra y levanta).
+- ✅ Verificación: simulacro completo en Docker Desktop, incluida la pérdida total de la instancia
+  y su restauración desde el archivo ([`README.md`](README.md#verificación-del-despliegue-2026-11-10));
+  suite 83 + 7 omitidas; `test_dorado` 15/15 dentro de la imagen.
+- Pendiente fuera del código: el primer VPS real y, en él, el despacho contra el SII de
+  certificación (fase 5).
 
 ## Política de folios
 

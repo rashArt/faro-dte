@@ -43,7 +43,7 @@ source .venv/bin/activate
 
 python setup.py                              # create .env, SQLite DB, admin user
 uvicorn main:app --reload --port 8000        # run API (docs at /docs, /redoc)
-cp docker-compose.example.yml docker-compose.yml && docker compose up -d   # containerized; docker-compose.yml is git-ignored (per deployment), see docs/deploy/
+docker compose -f docker-compose.dev.yml up -d --build   # local dev (PostgreSQL); a client instance uses docker-compose.prod.yml, see docs/deploy/README.md
 
 # pytest suite (fork, docs/deploy/PLAN.md): temp DB, fictitious CAF/cert, open findings as strict xfail
 .venv/bin/python -m pytest

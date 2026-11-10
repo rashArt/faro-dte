@@ -1,0 +1,115 @@
+# ============================================
+# Faro (motor Python) - una instancia de cliente
+# ============================================
+# Una carpeta por cliente con esta copia como `docker-compose.yml` y su `.env` (copia de
+# docs/deploy/cliente.env.example). Paso a paso, respaldo y actualización: docs/deploy/README.md.
+#
+#   cd /srv/clientes/acme
+#   docker compose build             # construye faro-dte:${FARO_VERSION} desde ${FARO_FUENTE}
+#   docker compose up -d             # db, luego migrar (alembic upgrade head), luego faro
+#
+# Nada publica puertos: la API se llama por la red `integraciones` como
+# http://${COMPOSE_PROJECT_NAME}:8000, y la base solo existe en la red interna del cliente.
+# Un proceso de uvicorn por instancia (docs/deploy/README.md, "Operación").
+
+x-faro: &faro
+  build:
+    context: ${FARO_FUENTE:-.}
+  image: faro-dte:${FARO_VERSION:?define FARO_VERSION en .env}
+  env_file: .env
+  environment:
+    - TZ=America/Santiago
+    - DATABASE_URL=postgresql+psycopg://faro:${POSTGRES_PASSWORD:?define POSTGRES_PASSWORD en .env}@db:5432/faro
+    # Decisiones explícitas por cliente: sin ellas el compose no levanta.
+    - SII_AMBIENTE=${SII_AMBIENTE:?define SII_AMBIENTE en .env (certificacion o produccion)}
+    - ENVIO_SII=${ENVIO_SII:?define ENVIO_SII en .env (activo o desactivado)}
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "5"
+
+services:
+  # Esquema de la base. Corre una vez y termina; faro arranca solo si terminó bien. Así un error
+  # de migración deja el servicio detenido, no a medio subir.
+  migrar:
+    <<: *faro
+    command: ["alembic", "upgrade", "head"]
+    restart: "no"
+    healthcheck:
+      disable: true
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - interna
+
+  faro:
+    <<: *faro
+    restart: unless-stopped
+    depends_on:
+      migrar:
+        condition: service_completed_successfully
+    volumes:
+      - faro-data:/app/storage        # XML firmados y PDF
+      - faro-logs:/app/logs
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+    networks:
+      interna:
+      integraciones:
+        aliases:
+          - ${COMPOSE_PROJECT_NAME:?define COMPOSE_PROJECT_NAME en .env}
+
+  db:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=faro
+      - POSTGRES_USER=faro
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?define POSTGRES_PASSWORD en .env}
+      - TZ=America/Santiago
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U faro -d faro"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+    networks:
+      - interna
+
+  # Redis solo hace falta con varios procesos o réplicas (comparte el token del SII). Con uno,
+  # el token vive en la memoria del proceso. Para activarlo: descomenta y agrega
+  # REDIS_URL=redis://redis:6379/0 al .env.
+  # redis:
+  #   image: redis:7-alpine
+  #   restart: unless-stopped
+  #   command: ["redis-server", "--save", "", "--appendonly", "no"]
+  #   networks:
+  #     - interna
+
+volumes:
+  faro-data:
+  faro-logs:
+  pg-data:
+
+networks:
+  # Solo la instancia del cliente: base, migración y Faro. Sin salida a Internet.
+  interna:
+    internal: true
+  # Compartida con tus integraciones (se crea una vez por servidor:
+  # docker network create integraciones). Por aquí Faro también sale al SII.
+  integraciones:
+    external: true

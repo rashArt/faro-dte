@@ -29,8 +29,7 @@ cuando haya una versión firmada. Lo que sigue es para quien prefiere el motor c
 git clone https://github.com/SebastianMoyano/faro-dte.git
 cd faro-dte
 cp .env.example .env      # la configuración; los valores por defecto sirven para empezar
-cp docker-compose.example.yml docker-compose.yml   # y descomenta el bloque `ports`
-docker compose up -d      # levanta el servidor en segundo plano
+docker compose -f docker-compose.dev.yml up -d --build   # levanta el servidor en segundo plano
 ```
 
 Espera ~1 minuto y comprueba que está vivo:

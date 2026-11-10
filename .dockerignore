@@ -52,3 +52,7 @@ htmlcov/
 
 # Docker
 docker-compose.override.yml
+
+# Manual de la API (se publica aparte) y respaldos de una instancia
+manual/
+respaldos/

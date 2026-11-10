@@ -6,5 +6,9 @@
   "rest-client.environmentVariables": {
     "$shared": { "usuario": "admin" },
     "local": { "base": "http://127.0.0.1:8000" }
-  }
+  },
+  // Esta rama se trabaja con Docker: la terminal NO activa .venv sola. Si la necesitas:
+  //   .venv\Scripts\Activate.ps1   (o llama a .venv\Scripts\python directo)
+  "python.terminal.activateEnvironment": false,
+  "python-envs.terminal.autoActivationType": "off"
 }

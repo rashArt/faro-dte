@@ -1,0 +1,103 @@
+# ============================================
+# Faro (motor Python) - desarrollo local
+# ============================================
+# Para aprender y probar en tu equipo: PostgreSQL (como producción), puertos solo en localhost,
+# interfaz y Swagger. SQLite queda comentado. Para un cliente usa docker-compose.prod.yml
+# (docs/deploy/README.md).
+#
+#   cp .env.example .env               # SIEMPRE antes de levantar (si no existe, Docker crea
+#                                      # un DIRECTORIO .env y falla). Define ADMIN_PASSWORD.
+#   docker compose -f docker-compose.dev.yml up -d --build
+#   http://localhost:8000/app          interfaz (la misma de la app Faro)
+#   http://localhost:8000/docs         Swagger
+#
+# Para no escribir `-f` cada vez: COMPOSE_FILE=docker-compose.dev.yml en tu .env.
+#
+# El esquema lo crean las migraciones de Alembic al arrancar Faro (en producción, el servicio
+# `migrar`). La clave de la base es POSTGRES_PASSWORD de tu .env (por defecto `faro-local`).
+#
+# Volver a cero (borra base, certificados y documentos de ESTA instancia local):
+#   docker compose -f docker-compose.dev.yml down -v
+#
+# Un volumen creado con la imagen anterior (corría como root) se corrige una vez:
+#   docker compose -f docker-compose.dev.yml run --rm --user 0 faro chown -R faro:faro /app/storage /app/logs
+#
+# Manual de la API (manual/, http://127.0.0.1:8001, se reconstruye al guardar):
+#   docker compose -f docker-compose.dev.yml --profile manual up -d manual
+
+services:
+  faro:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: faro-dte:local
+    restart: unless-stopped
+    # Dos usos del mismo .env:
+    #  - env_file: lo pasa al ENTORNO del proceso (ADMIN_PASSWORD, que main.py lee del entorno).
+    #  - el montaje: el archivo que leen los scripts de certificación y rotar_claves.py.
+    env_file: .env
+    environment:
+      - TZ=America/Santiago
+      - DATABASE_URL=postgresql+psycopg://faro:${POSTGRES_PASSWORD:-faro-local}@db:5432/faro
+      # Con SQLite (comenta la línea de arriba, `depends_on` y el servicio `db`). La base va DENTRO
+      # del volumen: con `sqlite:///./dte_database.db` quedaría en /app y se perdería al recrear
+      # el contenedor (verificado 2026-10-15).
+      # - DATABASE_URL=sqlite:////app/storage/dte_database.db
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - faro-data:/app/storage
+      - faro-logs:/app/logs
+      - ./.env:/app/.env:ro
+    ports:
+      - "127.0.0.1:8000:8000"
+
+  db:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=faro
+      - POSTGRES_USER=faro
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-faro-local}
+      - TZ=America/Santiago
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"        # para DBeaver o pgAdmin de tu equipo
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U faro -d faro"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  manual:
+    image: python:3.12-slim
+    profiles: [manual]
+    working_dir: /manual
+    volumes:
+      - ./manual:/manual
+    ports:
+      - "127.0.0.1:8001:8000"
+    # `zensical serve` no ve los cambios a través del montaje de Docker Desktop en Windows:
+    # se reconstruye revisando las fechas de los archivos cada 2 segundos.
+    command:
+      - sh
+      - -c
+      - |
+        pip install -q --root-user-action=ignore --disable-pip-version-check -r requirements.txt
+        zensical build --clean
+        python -m http.server 8000 -d site >/dev/null 2>&1 &
+        echo "Manual en http://127.0.0.1:8001"
+        touch /tmp/marca
+        while sleep 2; do
+          if [ -n "$$(find docs incluir zensical.toml -newer /tmp/marca -print -quit)" ]; then
+            touch /tmp/marca
+            zensical build
+          fi
+        done
+
+volumes:
+  faro-data:
+  faro-logs:
+  pg-data:

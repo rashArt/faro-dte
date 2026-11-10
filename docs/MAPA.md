@@ -50,7 +50,7 @@ varias empresas propias, **self-hosted** (no SaaS). Código y comentarios **en e
 | **Rotar secretos / gestionar certificados sin Python** | `nucleo-servidor rotar-claves`, `nucleo-keystore add|list|test|portal|remove|info` |
 | **Validar un XML contra el XSD del SII** (en Python y en Go, mismo veredicto) | `core/schema_validator.py` (lxml) · `nucleo/xsd/` (sin libxml2; vectores de paridad `tools/generar_xsd_vectores.py`) · `POST /api/v1/dte/validar-xml` en los dos motores |
 | **Verificar que la salida no cambió / probar un port** (byte a byte, sin SII) | [`DORADO.md`](DORADO.md) → `test_dorado.py`, `tests/dorado/`, `core/reloj.py` |
-| **Desplegar en un servidor por cliente** (Docker, API interna, Traefik solo para `/consulta`, integraciones, Postgres) | [`deploy/README.md`](deploy/README.md) → [`deploy/PLAN.md`](deploy/PLAN.md) (hallazgos verificados y fases del fork), `docker-compose.example.yml`, [`deploy/INTEGRACION.md`](deploy/INTEGRACION.md), [`deploy/POSTGRESQL.md`](deploy/POSTGRESQL.md) (SQLAlchemy + Alembic: `core/datos.py`, `core/migrar.py`, `migraciones/`), tablas en [`deploy/schema.dbml`](deploy/schema.dbml), reglas en [`deploy/CONVENCIONES.md`](deploy/CONVENCIONES.md); sondeo `tools/sondeo_integridad.py` |
+| **Desplegar en un servidor por cliente** (Docker, API interna, integraciones, Postgres, respaldos) | [`deploy/README.md`](deploy/README.md) → [`deploy/PLAN.md`](deploy/PLAN.md) (hallazgos verificados y fases del fork), `docker-compose.prod.yml` + [`deploy/cliente.env.example`](deploy/cliente.env.example) (local: `docker-compose.dev.yml`), `tools/respaldo.sh`, [`deploy/INTEGRACION.md`](deploy/INTEGRACION.md), [`deploy/POSTGRESQL.md`](deploy/POSTGRESQL.md) (SQLAlchemy + Alembic: `core/datos.py`, `core/migrar.py`, `migraciones/`), tablas en [`deploy/schema.dbml`](deploy/schema.dbml), reglas en [`deploy/CONVENCIONES.md`](deploy/CONVENCIONES.md); sondeo `tools/sondeo_integridad.py` |
 | **Probar la API desde VS Code** (REST Client, sin Swagger) | [`../http/README.md`](../http/README.md) → `http/api/*.http` (generados por `tools/generar_http.py` desde `/openapi.json`), `http/flujos/` (a mano) |
 | **Practicar sin riesgo** (EMPRESA DEMO SPA: mismo pipeline, CAF y certificado ficticios, sin envío) | [`APP.md`](APP.md) → `core/simulacion.py`, `test_simulacion.py` |
 | **Enseñar a facturar y declarar** (curso por tramos, app para quien no sabe nada, videos) | [`aprender/00-plan.md`](aprender/00-plan.md) |
@@ -74,7 +74,9 @@ del fork (fase 4): `core/autorizacion.py` (lo que puede un token `integracion`),
 (intentos fallidos), `api/auditoria.py` (quién hizo qué) y `GET /api/v1/auditoria`. Despacho
 al SII por documento (fase 5): `core/servicios/envio.py` envía el sobre guardado y sigue el
 veredicto en segundo plano (`POST /dte/{id}/enviar`, `GET /dte/{id}/estado`, `GET /dte/alertas`,
-`ENVIO_SII`); guía para integraciones en [`deploy/INTEGRACION.md`](deploy/INTEGRACION.md).
+`ENVIO_SII`); guía para integraciones en [`deploy/INTEGRACION.md`](deploy/INTEGRACION.md). El manual
+para quien consume la API (con diagramas, sin detalles internos) vive aparte en `manual/` (Zensical,
+publicado en GitHub Pages por `.github/workflows/manual.yml`): un cambio en una ruta se refleja en los dos.
 
 ## Estructura
 

@@ -1,19 +1,23 @@
 # ============================================
-# DTE Chile API - Dockerfile
+# Faro (motor Python) - Dockerfile
 # ============================================
-# Imagen base ligera de Python
+# La misma imagen para desarrollo (docker-compose.dev.yml) y para cada cliente
+# (docker-compose.prod.yml). La configuración llega por variables de entorno (`env_file`):
+# la imagen no lleva `.env` ni secretos, y corre sin privilegios.
 FROM python:3.12-slim
 
-# Variables de entorno
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
-# Directorio de trabajo
+# SQLite por defecto DENTRO del volumen storage/: el usuario faro no escribe en /app. El compose
+# de producción la reemplaza por PostgreSQL.
+ENV DATABASE_URL=sqlite:////app/storage/dte_database.db
+
 WORKDIR /app
 
-# Instalar dependencias del sistema necesarias
+# Dependencias del sistema para compilar lxml si no hay wheel
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         gcc \
@@ -21,27 +25,27 @@ RUN apt-get update && \
         libxslt1-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Copiar requirements primero (para cache de capas)
+# Requirements primero (caché de capas)
 COPY requirements.txt constraints.txt ./
-
-# Instalar dependencias Python
 RUN pip install --no-cache-dir -r requirements.txt -c constraints.txt
 
-# Copiar el código de la aplicación
+# Usuario sin privilegios. UID/GID fijos: los volúmenes y los respaldos conservan el mismo dueño
+# entre versiones de la imagen.
+RUN groupadd --system --gid 10001 faro && \
+    useradd --system --uid 10001 --gid faro --create-home faro
+
 COPY . .
 
-# Crear directorios necesarios
-RUN mkdir -p /app/storage /app/logs
+# Solo storage/ (base SQLite, XML firmados, PDF) y logs/ son escribibles. Un volumen nuevo
+# hereda este dueño; uno creado con una imagen anterior (que corría como root) se corrige una
+# vez: docker compose run --rm --user 0 faro chown -R faro:faro /app/storage /app/logs
+RUN mkdir -p /app/storage /app/logs && chown -R faro:faro /app/storage /app/logs
 
-# Copiar .env.example como .env si no existe
-RUN if [ ! -f .env ]; then cp .env.example .env; fi
+USER faro
 
-# Puerto expuesto
 EXPOSE 8000
 
-# Healthcheck
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
     CMD python -c "import httpx; httpx.get('http://localhost:8000/health').raise_for_status()"
 
-# Comando de inicio
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

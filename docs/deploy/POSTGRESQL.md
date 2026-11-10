@@ -62,7 +62,7 @@ de copia queda en el roadmap.
 | Folio atómico, 50 hilos | ✅ | ✅ |
 | Scripts históricos en la imagen (`test_dorado` 15/15, `test_simulacion`, `test_mvp`, `test_mipyme`, `test_robustez`, `test_claves_sii`, `test_rcv`) | ✅ | — |
 | `tools/sondeo_integridad.py` contra la imagen | mismos 8 hallazgos que antes del cambio; 20 emisiones simultáneas con folios 1..20 | — |
-| Compose con Postgres (`docker-compose.postgres.example.yml`): `alembic upgrade head` como paso explícito, 10 emisiones simultáneas por HTTP (folios 1..10), listado, PDF, API key, simulación | — | ✅ |
+| Compose con Postgres (fase 1; hoy `docker-compose.prod.yml`): `alembic upgrade head` como paso explícito, 10 emisiones simultáneas por HTTP (folios 1..10), listado, PDF, API key, simulación | — | ✅ |
 
 ```bash
 # La suite contra un Postgres desechable (se vacía entero al empezar):
@@ -70,13 +70,15 @@ FARO_TEST_DATABASE_URL=postgresql+psycopg://faro:<clave>@127.0.0.1:5432/faro_pru
 FARO_TEST_PG_DESECHABLE=1 .venv/bin/python -m pytest
 ```
 
-## Compose local con PostgreSQL
+## Compose con PostgreSQL
 
-[`docker-compose.postgres.example.yml`](../../docker-compose.postgres.example.yml): Faro, `postgres:17`
-y pgAdmin opcional (`--profile admin`), todo publicado solo en `127.0.0.1`. Necesita
-`POSTGRES_PASSWORD` (y `PGADMIN_PASSWORD`) en el `.env`. En un servidor de cliente la base no
-publica puerto: se administra por un túnel SSH o desde un contenedor en la misma red. El
-despliegue por cliente con Postgres es la fase 6.
+- **Local:** [`docker-compose.dev.yml`](../../docker-compose.dev.yml) usa el servicio `db`
+  (`postgres:17`, publicado solo en `127.0.0.1:5432`). SQLite queda comentado ahí mismo.
+- **Un cliente:** [`docker-compose.prod.yml`](../../docker-compose.prod.yml) (fase 6): la base va
+  en una red interna sin puertos ni salida a Internet, y `migrar` corre `alembic upgrade head`
+  antes de que arranque Faro. Respaldo con `pg_dump` en [`tools/respaldo.sh`](../../tools/respaldo.sh).
+  Se administra con `docker compose exec db psql -U faro faro` o por un túnel SSH.
+  Ver [`README.md`](README.md).
 
 ## Roadmap (fuera de este plan)
 
