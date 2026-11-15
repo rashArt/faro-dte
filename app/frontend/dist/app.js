@@ -376,6 +376,9 @@ vistas.ajustes = async (el) => {
         <li><span><b>La IA</b>, si la conectas, no recibe ninguna clave y no puede emitir sola: todo lo que cuenta ante el SII pasa por tu confirmación en esta app.</span></li>
         <li><span><b>No hay servidor de Faro.</b> Lo único que sale de este computador es lo que va al SII.</span></li>
       </ul></div>
+    <div class="card"><h3>¿Algo no funcionó?</h3>
+      <p class="mut">La app anota sus fallas en un registro en este computador y no las manda a ningún lado. Si algo salió mal, arma un informe: lo ves completo, con los RUT tachados, y tú decides dónde pegarlo.</p>
+      <button class="sec" onclick="informarProblema()">Informar un problema</button></div>
     <div class="card"><h3>Apariencia</h3><p class="mut">Si el fondo oscuro te cansa la vista, elige Claro. Automático sigue al sistema.</p>
       <div class="segmento" id="tema_sel">${Object.entries(TEMAS).map(([k, v]) => `<button class="${(localStorage.getItem("tema") || "") === k ? "on" : ""}" onclick="aplicarTema('${k}'); render()">${v}</button>`).join("")}</div></div>
     <details class="tecnico"><summary>Detalles técnicos</summary>
@@ -395,6 +398,35 @@ window.abrirPanel = async (pagina) => {
     try { await navigator.clipboard.writeText(estado.clave_admin); aviso("Clave copiada."); } catch {}
   }
   window.go.main.App.AbrirPanel(pagina);
+};
+// ---------- informar un problema ----------
+// Sin Sentry ni reportero en la nube (decisión 2026-10-17, ver docs/APP.md): la app guarda sus
+// fallas en logs/app-fallas.log de la carpeta de datos, y el informe se muestra entero antes de
+// que la persona lo copie. Nada sale solo.
+const fallasSesion = [];
+function registrarFalla(origen, texto) {
+  const linea = `${new Date().toISOString()} · ${origen} · ${String(texto || "").slice(0, 1500)}`;
+  if (fallasSesion.length >= 20 || fallasSesion.some((x) => x.slice(24) === linea.slice(24))) return;
+  fallasSesion.push(linea);
+  try { window.go?.main?.App?.RegistrarFalla?.(linea); } catch {}
+}
+window.addEventListener("error", (ev) => registrarFalla("interfaz", `${ev.message} (${(ev.filename || "").split("/").pop()}:${ev.lineno})${ev.error?.stack ? "\n" + ev.error.stack : ""}`));
+window.addEventListener("unhandledrejection", (ev) => registrarFalla("interfaz (promesa)", ev.reason?.stack || ev.reason));
+const abrirExterno = (u) => (window.go?.main?.App?.AbrirURL ? window.go.main.App.AbrirURL(u) : window.open(u, "_blank"));
+const informeBasico = () => `Informe de Faro (desde el navegador)\nMotor ${estado.version || "?"} en ${estado.url || "?"} · ambiente ${estado.ambiente || "?"}\nNavegador: ${navigator.userAgent}\nFecha: ${new Date().toISOString()}\n\n== Fallas de esta sesión ==\n${fallasSesion.length ? fallasSesion.join("\n") : "(ninguna)"}\n\nLos registros completos están en la carpeta de datos del motor (logs/).\n`;
+window.informarProblema = async () => {
+  let texto;
+  try { texto = window.go?.main?.App?.InformeProblema ? await window.go.main.App.InformeProblema() : informeBasico(); }
+  catch (e) { texto = informeBasico() + `\n(no pude leer los registros: ${e.message || e})\n`; }
+  const v = await dialogo({ titulo: "Informar un problema", ancho: 680,
+    cuerpo: `<p class="mut">Esto es <b>todo</b> lo que se compartiría: la versión, el sistema y las últimas líneas de los registros, con los RUT y las claves tachados. <b>Nada sale de tu computador solo</b>: tú lo copias y lo pegas donde quieras, por ejemplo en un reporte en GitHub.</p>
+      <textarea class="informe" readonly>${esc(texto)}</textarea>
+      <p class="mut">Agrega qué estabas haciendo cuando pasó: es lo que más ayuda a arreglarlo.</p>`,
+    botones: [{ texto: "Cerrar", clase: "sec", valor: false }, { texto: "Copiar y abrir GitHub", clase: "sec", valor: "github" }, { texto: "Copiar el informe", valor: true }] });
+  if (!v) return;
+  try { await navigator.clipboard.writeText(texto); aviso("Informe copiado. Pégalo donde lo vayas a mandar.", 5000); }
+  catch { aviso("No pude copiar solo: selecciona el texto del informe y cópialo tú.", 6000); }
+  if (v === "github") abrirExterno(`https://github.com/SebastianMoyano/faro-dte/issues/new?title=${encodeURIComponent(`Problema en Faro ${estado.version || ""}`.trim())}&body=${encodeURIComponent("Qué estaba haciendo:\n\n\nInforme de la app (pega aquí lo copiado):\n\n")}`);
 };
 // UF, UTM y dólar del día (los trae el núcleo Go a la base; Python los lee).
 async function pintarValores() {
@@ -758,6 +790,39 @@ function pintarMes(el, e) {
   calcMes();
 }
 
+// ---------- en el SII: los últimos movimientos tal como los tiene el SII ----------
+// Sale del registro de compras y ventas del SII, con el certificado de la empresa. Solo se pide
+// al pulsar el botón: cada consulta abre una sesión en el SII. Lo último traído queda en memoria.
+const movsSII = {};
+function pintarSII(el, e) {
+  if (e.demo) {
+    el.innerHTML = `<div class="card"><p>En la empresa de práctica no hay nada en el SII. Con tu propia empresa, aquí ves lo que el SII tiene registrado: lo que vendiste y lo que te facturaron.</p></div>`;
+    return;
+  }
+  el.innerHTML = `
+    <p class="mut">Lo que el SII tiene registrado de <b>${esc(e.razon_social || e.rut)}</b> este mes y el anterior: tus ventas y las facturas que te hicieron otros (compras). Un documento recién emitido puede tardar un rato en aparecer aquí.</p>
+    <div class="row"><button id="sii_traer">Traer del SII</button></div>
+    <div id="sii_res"></div>`;
+  const pintar = (r) => {
+    const fila = (m) => `<tr><td>${esc(fechaCorta(m.fecha_doc))}</td><td><span class="pill ${m.tipo_operacion === "VENTA" ? "p-ok" : "p-mut"}">${m.tipo_operacion === "VENTA" ? "venta" : "compra"}</span></td>
+      <td>${esc(TIPOS[m.tipo_dte] || m.tipo_dte)}</td><td>${m.folio}</td><td>${esc(m.razon_social || m.rut_contraparte || "")}</td>
+      <td class="num">${clp(m.monto_total)}</td><td>${m.estado_sii && m.estado_sii !== "REGISTRO" ? `<span class="pill p-warn">${esc(m.estado_sii.toLowerCase().replace("_", " "))}</span>` : ""}</td></tr>`;
+    const meses = r.periodos.map((p) => { const c = r.documentos[p] || {}; return `${mesLargo(p.slice(0, 4) + "-" + p.slice(4))}: ${c.ventas || 0} venta(s) y ${c.compras || 0} compra(s)`; }).join(" · ");
+    $("sii_res").innerHTML = r.sin_datos
+      ? `<div class="vacio">${icono("vacio")}El SII no tiene movimientos de esta empresa en estos meses.</div>`
+      : `<p class="mut">${esc(meses)}.${r.total > r.movimientos.length ? ` Se muestran los ${r.movimientos.length} más recientes.` : ""}</p>
+         <div class="card"><div class="tablewrap"><table><tr><th>Fecha</th><th></th><th>Documento</th><th>N°</th><th>De / para</th><th class="num">Total</th><th></th></tr>${r.movimientos.map(fila).join("")}</table></div></div>`;
+  };
+  $("sii_traer").onclick = async () => {
+    const b = $("sii_traer");
+    b.disabled = true; b.textContent = "Consultando al SII…";
+    try { movsSII[e.rut] = await api("GET", `/api/v1/keystore/negocios/${e.id}/movimientos?limite=100`); pintar(movsSII[e.rut]); }
+    catch (err) { $("sii_res").innerHTML = `<div class="banner rojo">${esc(err.message)}</div>`; }
+    b.disabled = false; b.textContent = "Volver a traer del SII";
+  };
+  if (movsSII[e.rut]) { pintar(movsSII[e.rut]); $("sii_traer").textContent = "Volver a traer del SII"; }
+}
+
 // Anular por el SII engine: el portal pre-construye la NC del documento (receptor e ítems tal
 // cual), el SII la valida en seco, y solo se emite con la cadena verificada desde Go.
 window.anularSII = async (id) => {
@@ -831,13 +896,14 @@ window.anularNCSII = async (id) => {
 vistas.documentos = async (el) => {
   await cargarNegocios();
   const e = empresa();
-  const tab = param("tab") === "mes" ? "mes" : "todos";
+  const tab = ["mes", "sii"].includes(param("tab")) ? param("tab") : "todos";
   el.innerHTML = `
     <h1>Documentos</h1>
     <p class="sub">Boletas, facturas y notas de <b>${esc(e.razon_social || e.rut)}</b>${e.demo ? " (práctica)" : ", tanto las del motor como las del gratuito del SII"}.</p>
-    <div class="tabs"><a class="${tab === "todos" ? "on" : ""}" href="#documentos">Todos</a><a class="${tab === "mes" ? "on" : ""}" href="#documentos?tab=mes">Mi mes</a></div>
+    <div class="tabs"><a class="${tab === "todos" ? "on" : ""}" href="#documentos">Todos</a><a class="${tab === "mes" ? "on" : ""}" href="#documentos?tab=mes">Mi mes</a><a class="${tab === "sii" ? "on" : ""}" href="#documentos?tab=sii">En el SII</a></div>
     <div id="doc_cuerpo"></div>`;
   if (tab === "mes") { pintarMes($("doc_cuerpo"), e); return; }
+  if (tab === "sii") { pintarSII($("doc_cuerpo"), e); return; }
   const r = await api("GET", "/api/v1/dte/documentos?" + new URLSearchParams({ limite: 100, rut_emisor: e.rut }));
   $("doc_cuerpo").innerHTML = `
     <div class="card">${tabla(r.documentos)}</div>

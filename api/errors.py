@@ -30,6 +30,7 @@ from sqlalchemy.exc import IntegrityError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from core.errors import DTEChileError
+from core.sala_espera import limpiar
 
 logger = logging.getLogger("dte.api")
 _acceso = logging.getLogger("dte.acceso")
@@ -61,7 +62,7 @@ def _json_error(status_code: int, codigo: str, mensaje: str, *,
                 request: Request, detalle: Optional[dict] = None,
                 headers: Optional[dict] = None) -> JSONResponse:
     envelope = ErrorEnvelope(error=ErrorBody(
-        codigo=codigo, mensaje=mensaje, detalle=detalle, request_id=_request_id(request)))
+        codigo=codigo, mensaje=limpiar(mensaje), detalle=detalle, request_id=_request_id(request)))
     return JSONResponse(status_code=status_code, content=envelope.model_dump(exclude_none=True),
                         headers=headers)
 

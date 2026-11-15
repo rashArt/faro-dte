@@ -4,7 +4,8 @@
 # La misma imagen para desarrollo (docker-compose.dev.yml) y para cada cliente
 # (docker-compose.prod.yml). La configuración llega por variables de entorno (`env_file`):
 # la imagen no lleva `.env` ni secretos, y corre sin privilegios.
-FROM python:3.12-slim
+# Parche fijado: 3.12.16 (avisos de 3.12.15, oct-2026). Subirlo a mano cuando salga otro parche.
+FROM python:3.12.16-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \

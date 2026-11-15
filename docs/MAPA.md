@@ -29,7 +29,7 @@ varias empresas propias, **self-hosted** (no SaaS). Código y comentarios **en e
 | Entender un **término** (CAF, TED, folio, RVD, voucher…) | [`GLOSARIO.md`](GLOSARIO.md) |
 | Saber **con qué RUT/clave entrar a cada trámite del SII** (el rebote clásico) | [`IDENTIDADES-SII.md`](IDENTIDADES-SII.md) |
 | **UF, UTM y dólar del día** (páginas oficiales del SII, caché en la tabla `valores`; el dólar oficial llega con rezago) | `nucleo/valores/` → `nucleo-valores actualizar|get|vigente|demonio`; lectura `GET /api/v1/valores` (+ `/historico?anio=`, `/{ind}/serie`); histórico desde 2015 cargado una vez (`nucleo-valores historico`), la app refresca el año en curso |
-| **Endpoints internos del portal SII** (facade SDI/AA, auth por clave, verificación de actividades, TIBVS) | [`SII-ENDPOINTS.md`](SII-ENDPOINTS.md) → `tools/captura-sii/` |
+| **Endpoints internos del portal SII** (facade SDI/AA, auth por clave, verificación de actividades, TIBVS, sala de espera Queue-it) | [`SII-ENDPOINTS.md`](SII-ENDPOINTS.md) → `tools/captura-sii/` |
 | **Anular una boleta** (NC de anulación, portal MIPYME, trámites SII) | [`ANULAR-BOLETA.md`](ANULAR-BOLETA.md) |
 | **Modelo de emisión** (voucher vs boleta, tarjetas, código 48, convivir con un POS) | [`MODELO-EMISION.md`](MODELO-EMISION.md) |
 | **Emitir por el gratuito del SII** (empresa en MiPyme, NC de anulación por el portal) | [`MIPYME.md`](MIPYME.md) → `core/sii_mipyme.py` |
@@ -40,6 +40,7 @@ varias empresas propias, **self-hosted** (no SaaS). Código y comentarios **en e
 | **RVD / consumo de folios de boletas en Go** (programador, catch-up, registro) | `nucleo/rvd/` + `nucleo/servidor/rvd.go` (`GET /api/v1/rvd/estado`, `POST /rvd/procesar`, `GET /rvd/registros/{rut}`); vector dorado `tests/dorado/rvd/` |
 | **Enviar boletas por el REST del SII desde Go** | `nucleo/sii/boleta.go` → `POST /api/v1/boletas/enviar`, `/boletas/estado` (solo Go; Python tenía el cliente sin ruta) |
 | **Propuesta de F29 desde el RCV, en Go** | `nucleo/rcv/` → `GET /api/v1/keystore/negocios/{id}/f29?periodo=` (mismo contrato que Python); vector `tests/dorado/rcv/` |
+| **Últimos movimientos directo del SII** (RCV compras y ventas, este mes y el anterior) | `GET /api/v1/keystore/negocios/{id}/movimientos?periodos=&limite=` en los tres motores (`core/rcv.py::ultimos_movimientos`, `nucleo/rcv/movimientos.go`, `nucleo-rs/src/rcv.rs`); en la app: Documentos → pestaña **En el SII** |
 | **Buscador público de boletas en Go** (`/consulta`, `/consulta/api`, descarga PDF/XML, host público acotado) | `nucleo/servidor/consulta.go` (= `api/routes/consulta.py`); páginas del panel en `nucleo/servidor/static/` |
 | **Correr TODOS los gates de una vez** (corpus, práctica, Go, esquema, contrato, app) | `./tools/prueba_final.sh` (`--sin-red` para CI, `--app` compila la Wails y la Tauri); el detalle en `docs/PLAN-PORT.md` |
 | **Que nada privado salga al público** (RUTs reales, personas, correos, secretos, tokens, certificados, bases, rutas de tu Mac) | `tools/auditar_publico.py` (árbol + toda la historia + que `.gitignore` tape cada ruta sensible; gate `publico`, hook pre-push y CI; `--autoprueba` es el gate del gate) · `tools/auditar_release.py dist/<v>` (abre cada paquete publicado: nada prohibido por nombre, el .app solo con lo esperado, sin secretos ni rutas en los binarios; lo corre `tools/release.sh` antes de las sumas). Lo que solo tú sabes va en `.auditoria-local.txt` (ignorado) |
@@ -55,6 +56,7 @@ varias empresas propias, **self-hosted** (no SaaS). Código y comentarios **en e
 | **Practicar sin riesgo** (EMPRESA DEMO SPA: mismo pipeline, CAF y certificado ficticios, sin envío) | [`APP.md`](APP.md) → `core/simulacion.py`, `test_simulacion.py` |
 | **Enseñar a facturar y declarar** (curso por tramos, app para quien no sabe nada, videos) | [`aprender/00-plan.md`](aprender/00-plan.md) |
 | **Editar la mini academia de la app** (23 lecciones por pasos, un visual por lección) | `tools/academia_datos.py` (fuente) → `app/frontend/dist/academia.js`; visuales en `app/frontend/dist/academia-vis.js`; gate `tools/revisar_academia.py` (`--md` genera [`aprender/LECCIONES.md`](aprender/LECCIONES.md), no se edita a mano); fila Aprender de [`APP.md`](APP.md) |
+| **Cuando algo falla en la app** (caídas al registro, "Informar un problema", por qué no hay Sentry) | `app-rs/src/informe.rs` (hook de panic, `informe_problema`, `registrar_falla`), `app/informe.go` (lo mismo en la Wails), tarjeta "¿Algo no funcionó?" en Ajustes (`app.js`); registro en `logs/app-fallas.log` de la carpeta de datos; decisión en [`APP.md`](APP.md) "Cuando algo falla" |
 | **PIN de la app / bóveda y permisos de la carpeta de datos** (solo motor Rust; 423 `boveda_bloqueada`) | `nucleo-rs/src/servidor/boveda.rs` (`/api/v1/boveda`, `abrir`, `bloquear`, `reiniciar`), `nucleo-rs/src/cliutil.rs` (`proteger_carpeta_datos`, 700/600), [`APP.md`](APP.md) sección de la carpeta de datos, gotcha en `CLAUDE.md` |
 
 ## El flujo, en una línea

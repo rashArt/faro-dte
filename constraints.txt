@@ -1,4 +1,4 @@
-# Versiones fijadas, resueltas en Linux (python:3.12-slim, la base del Dockerfile).
+# Versiones fijadas, resueltas en Linux (python:3.12.16-slim, la base del Dockerfile).
 # Se aplican como restricciones sobre requirements.txt, que queda igual que upstream:
 #   pip install -r requirements.txt -c constraints.txt
 # `mcp` queda en 1.x: la 2.x rompe mcp_server.py (hallazgo #11 de docs/deploy/PLAN.md).
@@ -16,7 +16,6 @@ cffi==2.1.1
 charset-normalizer==3.5.2
 click==8.5.0
 cryptography==50.0.2
-ecdsa==0.19.2
 fastapi==0.162.0
 h11==0.16.0
 httpcore==1.0.9
@@ -40,7 +39,6 @@ pillow==13.0.0
 pluggy==1.7.0
 psycopg==3.3.6
 psycopg-binary==3.3.6
-pyasn1==0.6.5
 pycparser==3.12
 pydantic==2.14.2
 pydantic-settings==2.16.2
@@ -50,16 +48,13 @@ PyJWT==2.15.1
 pypdf==6.21.4
 pytest==9.2.0
 python-dotenv==1.2.4
-python-jose==3.5.0
 python-multipart==0.0.32
 PyYAML==6.0.3
 redis==8.1.0
 referencing==0.37.0
 reportlab==5.1.0
 rpds-py==2026.9.1
-rsa==4.9.1
 signxml==5.2.0
-six==1.17.0
 SQLAlchemy==2.1.6
 sse-starlette==3.6.0
 starlette==1.10.0
