@@ -3,8 +3,8 @@
 .gitignore
 
 # Python
-__pycache__/
-*.py[cod]
+**/__pycache__/
+**/*.py[cod]
 *$py.class
 *.so
 .Python
@@ -29,28 +29,35 @@ ENV/
 .DS_Store
 Thumbs.db
 
-# Environment
-.env
+# Un patrón sin **/ solo cubre la raíz del contexto: `.env` no excluía `http/.env`.
+# La imagen va a un registro (Docker Hub): nada local ni secreto debe entrar.
+
+# Environment (la configuración llega por env_file al arrancar, nunca en la imagen)
+**/.env
+**/.env.local
 
 # Data
-*.db
-*.sqlite
-*.sqlite3
+**/*.db
+**/*.sqlite
+**/*.sqlite3
 storage/
 logs/
 
-# Certificados (NUNCA incluir en imagen)
-*.p12
-*.pfx
-*.pem
-*.key
+# Certificados (NUNCA incluir en imagen). Excepción: el certificado ficticio del corpus dorado
+# (clave "demo", L14), que el modo demo usa para firmar siempre igual (core/simulacion.py).
+**/*.p12
+**/*.pfx
+**/*.pem
+**/*.key
+!tests/dorado/fixtures/cert_demo.p12
 
 # Test
 .pytest_cache/
 .coverage
 htmlcov/
 
-# Docker
+# Docker: el docker-compose.yml de la raíz es la copia local de cada uno (ignorado por git)
+docker-compose.yml
 docker-compose.override.yml
 
 # Manual de la API (se publica aparte) y respaldos de una instancia

@@ -389,6 +389,25 @@ misma instancia; los CAF dejan de mezclarse y de usarse vencidos. Migración `00
 - Pendiente fuera del código: lo mismo de las fases 5 y 6 (primer VPS y despacho contra el SII de
   certificación con CAF y certificado reales).
 
+### Fase 8 — Imagen publicada en un registro (en curso, 2026-11-15)
+El VPS deja de construir: baja una imagen publicada una vez por versión.
+
+- **Decidido (2026-11-15):** Docker Hub; la etiqueta de git `servidor-vX.Y.Z` es la imagen
+  `<usuario>/faro-dte:X.Y.Z` (nunca `latest` para clientes); primero a mano, para practicar, y
+  después con GitHub Actions al crear la etiqueta. El prefijo evita chocar con las `v1.x.y` de
+  upstream (versiones de la app de escritorio: `v1.0.0`…`v1.2.0` al 2026-11-15).
+- ✅ **`.dockerignore`:** los patrones sin `**/` solo cubrían la raíz, así que `http/.env` (el de
+  los flujos `.http`) entraba a la imagen. Ahora `.env`, bases SQLite, certificados, `__pycache__`
+  y el `docker-compose.yml` local quedan fuera en cualquier carpeta; el único certificado que
+  entra es el ficticio del modo demo (`cert_demo.p12`, L14). Comprobado listando el contexto.
+- ✅ **`docker-compose.prod.yml`** sin `build`: `image: ${FARO_IMAGEN}:${FARO_VERSION}`, las dos
+  obligatorias. `FARO_FUENTE` desaparece. Actualizar un cliente es cambiar `FARO_VERSION` en su
+  `.env`, `pull` y `up` (migrar corre solo). `respaldo.sh` anota la imagen en el manifiesto.
+- ✅ `README.md`: "Publicar una versión" (manual) y despliegue y actualización con `pull`.
+- ✅ Primera publicación a mano: imagen `1.0.0` en Docker Hub, etiqueta `servidor-v1.0.0`.
+- Pendiente: workflow `.github/workflows/imagen.yml` (al crear `servidor-v*`: suite, build y
+  push con secretos de GitHub) y su prueba (`servidor-v1.0.1`).
+
 ## Política de folios
 
 Un folio es el número legal del documento. **Regla: timbrado = emitido** (decidido 2026-10-29).

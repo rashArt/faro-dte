@@ -5,17 +5,18 @@
 # docs/deploy/cliente.env.example). Paso a paso, respaldo y actualización: docs/deploy/README.md.
 #
 #   cd /srv/clientes/acme
-#   docker compose build             # construye faro-dte:${FARO_VERSION} desde ${FARO_FUENTE}
+#   docker compose pull              # baja ${FARO_IMAGEN}:${FARO_VERSION} del registro (Docker Hub)
 #   docker compose up -d             # db, luego migrar (alembic upgrade head), luego faro
+#
+# Aquí no se construye: la imagen se publica una vez por versión (etiqueta de git
+# servidor-v1.2.0 -> imagen 1.2.0) y todos los clientes bajan la misma. Actualizar = cambiar FARO_VERSION en .env.
 #
 # Nada publica puertos: la API se llama por la red `integraciones` como
 # http://${COMPOSE_PROJECT_NAME}:8000, y la base solo existe en la red interna del cliente.
 # Un proceso de uvicorn por instancia (docs/deploy/README.md, "Operación").
 
 x-faro: &faro
-  build:
-    context: ${FARO_FUENTE:-.}
-  image: faro-dte:${FARO_VERSION:?define FARO_VERSION en .env}
+  image: ${FARO_IMAGEN:?define FARO_IMAGEN en .env}:${FARO_VERSION:?define FARO_VERSION en .env}
   env_file: .env
   environment:
     - TZ=America/Santiago

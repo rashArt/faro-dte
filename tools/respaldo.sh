@@ -87,6 +87,7 @@ respaldar() {
     {
         echo "proyecto=$proy"
         echo "fecha=$(date -Iseconds)"
+        echo "faro_imagen=$(valor_env FARO_IMAGEN)"
         echo "faro_version=$(valor_env FARO_VERSION)"
         echo "alembic=$(psql_db 'SELECT version_num FROM alembic_version' || echo '?')"
         echo "documentos=$(psql_db 'SELECT count(*) FROM dtes' || echo '?')"

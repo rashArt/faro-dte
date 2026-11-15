@@ -30,7 +30,7 @@ empresa cliente, con la API solo en la red interna y sin la interfaz gráfica a 
 | Motor | **Python** (`Dockerfile`, `python:3.12-slim`) | Es la referencia del proyecto y trae Swagger (`/docs`) (`docs/COMPARACION-PYTHON-GO.md`). El binario Rust (`nucleo-servidor servir`) tiene el mismo contrato de API y es el destino final del port, pero no tiene imagen Docker oficial. |
 | Aislamiento | **Una instancia por empresa** (carpeta, contenedores, volúmenes y `.env` propios) | Faro no es multi-tenant: usuarios y API keys no se separan por empresa. Una instancia por cliente aísla datos, certificados y secretos. |
 | Base de datos | **PostgreSQL** en producción, SQLite en local y pruebas | Las dos con el mismo código y el esquema en migraciones de Alembic (fase 1 de [`PLAN.md`](PLAN.md)). |
-| Imagen | **Se construye en el VPS** desde el repositorio, una vez por versión (`faro-dte:<versión>`) | Sin registro de imágenes por ahora. Corre como usuario `faro` (UID 10001), sin `.env` adentro: la configuración llega por `env_file`. |
+| Imagen | **Se publica en un registro** (Docker Hub), una vez por versión: la etiqueta de git `servidor-v1.2.0` es la imagen `<usuario>/faro-dte:1.2.0`. El VPS solo la baja | No se compila en cada despliegue y todos los clientes corren exactamente la misma imagen. Corre como usuario `faro` (UID 10001), sin `.env` adentro: la configuración llega por `env_file`. Ver [Publicar una versión](#publicar-una-versión). |
 | Procesos | **Un proceso de uvicorn por instancia** | Alcanza para el volumen de una empresa. El RVD y la reposición de folios corren dentro del proceso y no tienen candado entre procesos: con varios, cada uno los correría. Redis queda comentado en el compose para cuando haga falta. |
 | Exposición | **Nada publica puertos.** La API va en la red `integraciones`; la base, en una red interna sin salida | `docs/PLATAFORMA.md` §5: no exponer la API REST a Internet. Tus integraciones la llaman por la red de Docker. |
 | Interfaz gráfica | **No se publica** | Las páginas (`/app`, `/docs`, `/onboarding`, `/apikeys`…) existen dentro del contenedor, pero sin puerto nadie de afuera llega a ellas. Para aprender, usa la instancia local. |
@@ -96,18 +96,53 @@ La práctica funciona sin configurar nada más. Para probar contra el SII de cer
 (Maullín) necesitas el certificado `.pfx` del representante legal, el RUT de la empresa y folios
 (CAF). Se cargan por la API ([`INTEGRACION.md`](INTEGRACION.md)), no en el `.env`.
 
+## Publicar una versión
+
+Se hace en tu equipo, no en el VPS. Una versión es una etiqueta de git (`servidor-v1.2.0`) y su
+imagen lleva el mismo número (`<usuario>/faro-dte:1.2.0`): así cada cliente corre un commit
+conocido. Nunca se publica `latest` para clientes.
+
+Las etiquetas del fork llevan el prefijo `servidor-` porque las `v1.x.y` son de upstream (las
+versiones de la app de escritorio) y llegan con cada `git fetch` del repositorio original: una
+`v1.0.0` propia chocaría con la suya. La numeración del servidor es independiente.
+
+Una vez: un repositorio `faro-dte` en Docker Hub y un *Personal access token* con permiso de
+escritura (`docker login -u <usuario>` lo pide como contraseña y lo recuerda).
+
+```bash
+git status                                   # árbol limpio: lo que no está en un commit no va
+git tag -a servidor-v1.2.0 -m "Servidor 1.2.0" && git push origin servidor-v1.2.0
+docker build -t <usuario>/faro-dte:1.2.0 .
+docker push <usuario>/faro-dte:1.2.0
+```
+
+`docker build` empaqueta la carpeta, no el commit: por eso el árbol limpio. Los archivos locales
+(`.env` en cualquier carpeta, bases SQLite, certificados, tu `docker-compose.yml`) los deja
+fuera [`.dockerignore`](../../.dockerignore); el único certificado que entra es el ficticio del
+modo demo. Para comprobarlo en la imagen:
+
+```bash
+docker run --rm --entrypoint "" <usuario>/faro-dte:1.2.0 find /app -name .env -o -name '*.db' -o -name '*.pfx' -o -name '*.p12'
+# solo debe aparecer /app/tests/dorado/fixtures/cert_demo.p12
+```
+
+Si el repositorio de Docker Hub es privado, cada VPS entra con un token de **solo lectura**
+(`docker login -u <usuario>`), uno por servidor para poder revocarlo sin afectar a los demás.
+
 ## Desplegar un cliente
 
 Ejemplo con el cliente `acme`. El repositorio vive en `/srv/faro-dte` y cada cliente en
-`/srv/clientes/<cliente>`.
+`/srv/clientes/<cliente>`. El VPS **no construye**: del repositorio usa el compose, la plantilla
+del `.env` y `tools/respaldo.sh`, en la misma etiqueta que la imagen que corre.
 
 **1. Servidor (una sola vez).** Docker con el plugin Compose v2, el repositorio y la red
 compartida con tus integraciones:
 
 ```bash
 git clone https://github.com/rashArt/faro-dte.git /srv/faro-dte
-git -C /srv/faro-dte checkout servidor-produccion
+git -C /srv/faro-dte checkout servidor-v1.2.0    # la misma versión que la imagen
 docker network create integraciones
+docker login -u <usuario>                          # solo si la imagen es privada (token de lectura)
 ```
 
 **2. Carpeta del cliente.**
@@ -131,18 +166,23 @@ openssl rand -base64 18                               # ADMIN_PASSWORD
 | Variable | Valor para `acme` |
 |---|---|
 | `COMPOSE_PROJECT_NAME` | `faro-acme`: prefijo de contenedores y volúmenes, y nombre de la API en la red (`http://faro-acme:8000`) |
-| `FARO_VERSION` | la versión que vas a construir, por ejemplo la etiqueta de git |
-| `FARO_FUENTE` | `/srv/faro-dte` |
+| `FARO_IMAGEN` | `<usuario>/faro-dte`: la imagen publicada en Docker Hub |
+| `FARO_VERSION` | `1.2.0`: la de la etiqueta de git `servidor-v1.2.0` |
 | `ENVIO_SII` | `activo`. Con `desactivado` se emite pero nada llega al SII |
 
-El compose no levanta si falta `COMPOSE_PROJECT_NAME`, `FARO_VERSION`, `POSTGRES_PASSWORD` o
-`ENVIO_SII`: son decisiones explícitas de cada cliente.
+El compose no levanta si falta `COMPOSE_PROJECT_NAME`, `FARO_IMAGEN`, `FARO_VERSION`,
+`POSTGRES_PASSWORD` o `ENVIO_SII`: son decisiones explícitas de cada cliente.
 
 **El `.env` lo leen dos programas.** Docker Compose lo usa para armar los contenedores (nombre
-del proyecto, versión de la imagen, carpeta del código, clave de PostgreSQL). Faro lo lee al
+del proyecto, imagen y versión, clave de PostgreSQL). Faro lo lee al
 arrancar para su configuración y sus secretos. La imagen no guarda nada de esto: es la misma
 para todos los clientes, y cambiar el `.env` pide recrear el contenedor (`docker compose up -d
-faro`), no reconstruir la imagen.
+faro`), no otra imagen.
+
+**La contraseña del administrador** sale de `ADMIN_PASSWORD` en el primer arranque, con la base
+vacía; sin ella, Faro genera una y la imprime una sola vez (`docker compose logs faro`). Cambiarla
+después en el `.env` no cambia al administrador que ya existe. Nunca la escribas en el
+`docker-compose.yml`: es igual para todos los clientes.
 
 **Lo que no va en el `.env`.** Los datos de la empresa, su certificado, sus folios y su
 **ambiente** (demo, certificación o producción) viven en la base y se cargan por la API (paso 6).
@@ -153,15 +193,14 @@ con `PUT /api/v1/empresa/ambiente`.
 Guarda `DTE_MASTER_KEY` también **fuera del servidor** (gestor de secretos). Cifra los
 certificados guardados; si se pierde, hay que volver a subirlos.
 
-**4. Construir y levantar.**
+**4. Bajar la imagen y levantar.**
 
 ```bash
-docker compose build          # faro-dte:<FARO_VERSION>, desde /srv/faro-dte
+docker compose pull           # <FARO_IMAGEN>:<FARO_VERSION> desde Docker Hub
 docker compose up -d --wait faro
 ```
 
-Si otro cliente ya construyó la misma versión, `build` reutiliza las capas en caché y termina en
-segundos.
+Si otro cliente del mismo servidor ya usa esa versión, la imagen ya está y `pull` no baja nada.
 
 **5. Comprobar.**
 
@@ -229,20 +268,27 @@ mkdir -p /srv/clientes/acme && cd /srv/clientes/acme
 
 ### Actualizar
 
+Primero [publica la versión](#publicar-una-versión). En el VPS se cambia el `.env`, no el
+`docker-compose.yml`:
+
 ```bash
-git -C /srv/faro-dte pull
+git -C /srv/faro-dte fetch --tags && git -C /srv/faro-dte checkout servidor-v1.3.0
 cd /srv/clientes/acme
+diff /srv/faro-dte/docker-compose.prod.yml docker-compose.yml   # ¿cambió el compose? cópialo
 /srv/faro-dte/tools/respaldo.sh respaldar
-# en .env: FARO_VERSION=<versión nueva>
-docker compose build
+# en .env: FARO_VERSION=1.3.0
+docker compose pull
 docker compose up -d --wait faro       # migrar aplica las migraciones nuevas antes de arrancar
-docker compose ps -a
+docker compose ps -a                   # migrar "Exited (0)", faro "healthy"
 ```
+
+Las migraciones no se corren a mano: `up` recrea `migrar` con la imagen nueva, corre
+`alembic upgrade head` y Faro arranca solo si terminó bien.
 
 `docker compose run --rm migrar alembic current` dice en qué migración está la base.
 
-**Volver a la versión anterior.** La imagen anterior sigue en el servidor (`docker image ls
-faro-dte`). Una migración nueva puede haber cambiado la base, así que se vuelve con el respaldo
+**Volver a la versión anterior.** La imagen anterior sigue en el servidor (`docker image ls`) y
+en Docker Hub. Una migración nueva puede haber cambiado la base, así que se vuelve con el respaldo
 tomado antes de actualizar:
 
 ```bash
