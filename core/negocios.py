@@ -93,16 +93,34 @@ def info_empresa(rut: str, ambiente: str = "certificacion") -> Optional[dict]:
 
 
 def agregar_negocio(cuenta_id: int, rut: str, cert_id: Optional[int] = None,
-                    ambiente: str = "certificacion") -> dict:
+                    ambiente: str = "certificacion", razon_social: Optional[str] = None) -> dict:
     """Agrega un negocio a la cuenta, auto-completando la razón social desde el SII.
+
+    En modo demo (`simulacion`) no se consulta al SII: basta un RUT bien formado y la razón
+    social es la que venga. El RUT se valida en el SII al pasar a certificación o producción
+    (`core/empresa.py::cambiar_ambiente`).
 
     Raises:
         ValueError: si el RUT no está autorizado a emitir DTE (no parece un negocio válido).
     """
     from datetime import datetime, timezone
-    info = info_empresa(rut, ambiente)
-    if not info:
-        raise ValueError(f"El RUT {rut} no aparece autorizado a emitir DTE en el SII.")
+    from core import empresa
+    from core.ambiente import ambiente_inicial, usa_sii
+    from core.rut import formatear_rut, validar_rut
+    # Fase 7 del fork: una instancia, una empresa; y el ambiente no se cambia por esta ruta
+    # (nace con SII_AMBIENTE y se cambia con PUT /api/v1/empresa/ambiente).
+    empresa.exigir_unica(rut)
+    actual = empresa.obtener()
+    ambiente = actual["ambiente"] if actual else ambiente_inicial()
+    if usa_sii(ambiente):
+        info = info_empresa(rut, ambiente)
+        if not info:
+            raise ValueError(f"El RUT {rut} no aparece autorizado a emitir DTE en el SII ({ambiente}).")
+    else:
+        if not validar_rut(rut or ""):
+            raise ValueError(f"El RUT {rut} no es válido.")
+        rut = formatear_rut(rut, con_puntos=False).upper()
+        info = {"rut": rut, "razon_social": (razon_social or "").strip() or None}
     ahora = datetime.now(timezone.utc).isoformat()
     with database.get_db() as conn:
         conn.execute(SCHEMA_NEGOCIOS)
@@ -110,8 +128,9 @@ def agregar_negocio(cuenta_id: int, rut: str, cert_id: Optional[int] = None,
         existente = conn.execute("SELECT id FROM negocios WHERE cuenta_id=? AND rut=?",
                                  (cuenta_id, info["rut"])).fetchone()
         if existente:
-            conn.execute("UPDATE negocios SET razon_social=?, cert_id=?, ambiente=? WHERE id=?",
-                         (info["razon_social"], cert_id, ambiente, existente["id"]))
+            conn.execute("UPDATE negocios SET razon_social=COALESCE(?, razon_social), "
+                         "cert_id=COALESCE(?, cert_id) WHERE id=?",
+                         (info["razon_social"], cert_id, existente["id"]))
             neg_id = existente["id"]
         else:
             cur = conn.execute(

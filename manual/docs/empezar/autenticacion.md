@@ -15,7 +15,7 @@ Cada instancia de Faro atiende a **una empresa** y reconoce dos roles:
 | **Quién** | Una persona que opera la instancia | Un sistema: punto de venta, tienda web, ERP |
 | **Credencial** | Usuario y contraseña, que dan un JWT de 60 minutos | Token `dte_…` que no vence |
 | **Cómo se obtiene** | `POST /api/v1/auth/login` | Lo crea el administrador con `POST /api/v1/apikeys` |
-| **Para qué** | Todo: usuarios, tokens, auditoría, alertas | Emitir, enviar y consultar documentos; gestionar certificados, CAF y datos de la empresa |
+| **Para qué** | Configurar la empresa (datos, certificado, ambiente) y operar la instancia: tokens, auditoría, alertas | Emitir, enviar y consultar documentos; ver la empresa y sus folios; cargar CAF |
 
 **Tu sistema usa un token de integración**, no la contraseña de una persona: no vence, no depende
 de que alguien cambie su clave y queda identificado en la auditoría.
@@ -29,12 +29,66 @@ de que alguien cambie su clave y queda identificado en la auditoría.
 | Puede | No puede (responde `403`) |
 |---|---|
 | Emitir, previsualizar, enviar y consultar sus documentos (`/api/v1/dte/…`) | Crear usuarios ni gestionar otros tokens |
-| Gestionar certificados, datos de la empresa, CAF y folios | Ver la auditoría |
-| Consultar folios restantes e indicadores (UF, UTM, dólar) | Ver las alertas y el listado general de documentos |
-| Renovar **su propio** token | Usar las rutas de administración |
+| Ver la empresa, su ambiente y sus folios (`GET /api/v1/empresa`, `GET /api/v1/empresa/folios`) | Cambiar los datos de la empresa, su certificado o su ambiente |
+| Cargar y listar CAF (`POST /api/v1/caf`, `GET /api/v1/caf`) | Fijar a mano el CAF en uso |
+| Consultar indicadores (UF, UTM, dólar) | Ver la auditoría, las alertas y el listado general de documentos |
+| Renovar **su propio** token | Crear usuarios ni gestionar otros tokens |
+
+## Qué hace el administrador
+
+La empresa se configura pocas veces y con cuidado, así que lo hace una persona con su usuario y
+contraseña, no un sistema. Solo el administrador puede:
+
+| Tarea | Llamada | Guía |
+|---|---|---|
+| Crear la empresa y mantener sus datos | `PUT /api/v1/empresa` | [Configurar la empresa](../guias/configurar-empresa.md) |
+| Subir o reemplazar el certificado digital | `PUT /api/v1/empresa/certificado` | [Configurar la empresa](../guias/configurar-empresa.md#2-subir-el-certificado-digital) |
+| Pasar de demo a certificación y a producción | `PUT /api/v1/empresa/ambiente` | [Pasar a producción](../guias/pasar-a-produccion.md) |
+| Fijar a mano el CAF en uso | `PUT /api/v1/caf/{id}/en-uso` | [Configurar la empresa](../guias/configurar-empresa.md#varios-caf-del-mismo-tipo) |
+| Crear, renovar y revocar tokens | `/api/v1/apikeys` | Esta página |
+| Ver la auditoría, las alertas y todos los documentos | `/api/v1/auditoria`, `/api/v1/dte/alertas`, `/api/v1/dte/documentos` | [Rutas](../referencia/rutas.md#solo-administrador) |
+
+Cada cambio queda en la auditoría con quién lo hizo. Un token de integración que llama una de
+estas rutas recibe `403`.
 
 **Cada token ve solo los documentos que emitió.** Si pide uno ajeno, recibe `404`, no `403`, para
 no revelar que el documento existe.
+
+## El administrador y su primer acceso
+
+Una instancia nace con **un solo usuario**: `admin`. Lo crea Faro en el primer arranque, con la
+contraseña de `ADMIN_PASSWORD` del servidor o, si no está definida, con una aleatoria que
+aparece **una sola vez** en el log. Quien instala la instancia se la entrega al administrador.
+
+El administrador entra así:
+
+```bash
+curl -s -X POST "$FARO_URL/api/v1/auth/login" \
+  -H "Content-Type: application/json" \
+  -d '{"username": "admin", "password": "<contraseña del administrador>"}'
+```
+
+La respuesta trae `access_token`, un JWT que dura 60 minutos. En los ejemplos del manual va en
+`$FARO_ADMIN`. Cuando vence, se vuelve a iniciar sesión.
+
+## Crear un token de integración
+
+El administrador crea **un token por sistema** que se conecta a Faro:
+
+```bash
+curl -s -X POST "$FARO_URL/api/v1/apikeys" \
+  -H "Authorization: Bearer $FARO_ADMIN" \
+  -H "Content-Type: application/json" \
+  -d '{"nombre": "punto-de-venta"}'
+```
+
+```json
+{"api_key": "dte_xxxxxxxxxxxx", "id": 3, "nombre": "punto-de-venta", "aviso": "..."}
+```
+
+`api_key` es el token. **Se muestra solo en esta respuesta**: Faro guarda una huella, no la
+clave. Entrégalo al equipo del sistema por un canal seguro; ellos lo guardan como secreto
+(`$FARO_TOKEN` en los ejemplos). Si se pierde, se renueva o se crea otro.
 
 ## Ciclo de vida de un token
 

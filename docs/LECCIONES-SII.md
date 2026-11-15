@@ -195,7 +195,16 @@ folio ya recibido (DTE-3-101) → CAF vencido (CAF-3-517) → timbre TED → fir
 
 ⇒ Para probar la **firma** necesitas folio **fresco** y CAF **vigente**, o no verás nada.
 
-- **`CAF-3-517` (CAF vencido)**: `Firma_DTE − FA_CAF > 6 meses`.
+- **`CAF-3-517` (CAF vencido)**: `Firma_DTE − FA_CAF > 6 meses`. Fuente: Res. Ex. SII 58/2017
+  (CAF autorizados desde el 01-07-2018; habla de documentos con derecho a crédito fiscal). El
+  motor Python del fork lo aplica a **todos** los tipos y no emite ni carga un CAF vencido
+  (`core/models.py::caf_vencido`, fase 7 de `docs/deploy/PLAN.md`).
+- **Certificación y producción entregan CAF distintos y numeran por separado.** Un CAF de
+  certificación no sirve en producción, y el folio 1 existe en los dos. En el fork cada CAF y
+  cada documento guarda su ambiente (migración `0005`).
+- **Se puede tener varios CAF vigentes del mismo tipo.** El SII no pide avisar cuál se usa: cada
+  documento lleva su CAF en el timbre. El fork usa el vigente que vence primero y pasa solo al
+  siguiente.
 - **Anti-acaparamiento**: el SII bloquea el timbraje si acumulas folios sin usar.
   Estado actual: **T33 y T61 bloqueados**; **T34, T39, T41 libres**.
 - **`REF-3-750` ("DTE referenciado no recibido")**: una nota de crédito referencia un DTE que el

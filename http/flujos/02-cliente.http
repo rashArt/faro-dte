@@ -1,8 +1,8 @@
 # Flujo 2 — Emitir como una integración: certificado del negocio e id_externo (fase 2 de docs/deploy/PLAN.md).
 # Escrito a mano. Ejecuta los bloques en orden (Ctrl+Alt+R sobre cada uno).
 # Usa EMPRESA DEMO SPA (77777777-7) con el CAF y el certificado ficticios del corpus: firma y
-# timbra de verdad. Corre solo contra una instancia local o de prueba con ENVIO_SII=desactivado
-# (por defecto): nada sale al SII. Los pasos 13 a 18 son la fase 5 (emisor del negocio, estado,
+# timbra de verdad. Corre contra una instancia local con SII_AMBIENTE=simulacion (modo demo, el
+# valor de .env.example): la empresa se crea sin consultar al SII y nada sale al SII. Los pasos 13 a 18 son la fase 5 (emisor del negocio, estado,
 # envío y BORRADOR); con ENVIO_SII=activo y CAF y certificado reales, el mismo flujo envía de verdad.
 
 @clave = {{$dotenv FARO_CLAVE}}
@@ -39,9 +39,16 @@ Content-Type: application/octet-stream
 < ../../tests/dorado/fixtures/caf_33.xml
 --FaroLimite--
 
-### 3. Subir el certificado ficticio una vez (queda cifrado en el keystore)
-# @name certificado
-POST {{base}}/api/v1/keystore/certificados
+### 3. Crear la empresa de la instancia con sus datos (una vez; repetirlo solo actualiza los datos)
+PUT {{base}}/api/v1/empresa
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"rut": "77777777-7", "razon_social": "EMPRESA DEMO SPA", "giro": "Cafeteria", "codigo_actividad": 561000,
+ "direccion": "Calle Ficticia 123", "comuna": "Santiago", "ciudad": "Santiago"}
+
+### 4. Subir el certificado ficticio de la empresa (queda cifrado; nunca se devuelve)
+PUT {{base}}/api/v1/empresa/certificado
 Authorization: Bearer {{token}}
 Content-Type: multipart/form-data; boundary=FaroLimite
 
@@ -55,13 +62,6 @@ Content-Disposition: form-data; name="password"
 
 {{clave_cert}}
 --FaroLimite--
-
-### 4. Ligar el certificado al negocio emisor (si ya existe, responde 409: sigue igual)
-POST {{base}}/api/v1/keystore/negocios
-Authorization: Bearer {{token}}
-Content-Type: application/x-www-form-urlencoded
-
-rut=77777777-7&cert_id={{certificado.response.body.id}}
 
 ### 5. Emitir con id_externo y SIN certificado en el cuerpo → 200, estado "generado"
 # @name emitir
@@ -154,13 +154,9 @@ Content-Type: application/json
 GET {{base}}/api/v1/keystore/negocios/1/contexto-emision
 Authorization: Bearer {{token}}
 
-### 13. Datos del emisor en el negocio (una vez): con ellos, emitir no necesita `emisor`
-PUT {{base}}/api/v1/keystore/negocios/1
+### 13. La empresa: datos, ambiente, certificado y qué falta para pasar a producción
+GET {{base}}/api/v1/empresa
 Authorization: Bearer {{token}}
-Content-Type: application/json
-
-{"giro": "Cafeteria", "codigo_actividad": 561000, "direccion": "Calle Ficticia 123",
- "comuna": "Santiago", "ciudad": "Santiago"}
 
 ### 14. Emitir SIN emisor → 200; "envio": "desactivado" en local ("programado" con ENVIO_SII=activo)
 # @name sin_emisor

@@ -5,6 +5,7 @@
 
 @clave = {{$dotenv FARO_CLAVE}}
 @clave_cert = {{$dotenv FARO_CLAVE_CERT}}
+@caf_id = 1
 @rut_emisor = 1
 @tipo_dte = 1
 
@@ -43,7 +44,7 @@ Content-Type: application/json
 }
 
 ### Listar CAF registrados
-# opcionales: rut_emisor=77777777-7, tipo_dte=33
+# opcionales: rut_emisor=77777777-7, tipo_dte=33, ambiente=certificacion
 # @name get_cafs_api_v1_caf_get
 GET {{base}}/api/v1/caf
 Authorization: Bearer {{token}}
@@ -60,6 +61,11 @@ Content-Type: application/octet-stream
 
 < ../../tests/dorado/fixtures/caf_33.xml
 --FaroLimite--
+
+### Fijar el CAF del que salen los folios (administrador)
+# @name put_usar_caf_api_v1_caf_caf_id_en_uso_put
+PUT {{base}}/api/v1/caf/{{caf_id}}/en-uso
+Authorization: Bearer {{token}}
 
 ### CAF activo de un emisor y tipo
 # @name get_caf_activo_api_v1_caf_activo_rut_emisor_tipo_dte_get

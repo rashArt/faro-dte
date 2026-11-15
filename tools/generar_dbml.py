@@ -25,33 +25,40 @@ RAIZ = Path(__file__).resolve().parent.parent
 DESTINO = RAIZ / "docs" / "deploy" / "schema.dbml"
 
 NOTAS = {
-    "dtes": "Documentos emitidos: uno por folio (UNIQUE rut_emisor + tipo_dte + folio). Guarda el XML firmado. "
+    "dtes": "Documentos emitidos: uno por folio y ambiente (UNIQUE rut_emisor + tipo_dte + folio + ambiente; "
+            "fork, 0005: el folio 1 existe en certificación y en producción). Guarda el XML firmado. "
             "estado reservado/error = sin timbre (el folio se reusa); intento nombra la carpeta de archivos. "
             "origen = quién lo emitió por /dte/emitir (usuario:<id> o apikey:<id>; fork, 0003). "
             "Despacho al SII (fork, 0004): seguimiento, intentos_envio, proxima_accion, tomado_hasta, "
             "enviado_en, consultado_en, veredicto_en, motivo_sii; estados enviado, aceptado, "
             "aceptado_con_reparos, rechazado, envio_fallido, sin_veredicto.",
-    "cafs": "Rangos de folios autorizados por el SII. folio_siguiente es el contador atómico (L7).",
+    "cafs": "Rangos de folios autorizados por el SII. folio_siguiente es el contador atómico (L7). "
+            "ambiente: los CAF de certificación y de producción son distintos y no se mezclan (fork, 0005).",
+    "ambientes": "Ambientes del SII (fork, 0005): certificacion, produccion y simulacion (demo local, nunca "
+                 "sale al SII). Cada CAF, documento, emisión y RVD guarda el ambiente en que nació.",
     "audit_log": "Bitácora de acciones (emisión, envío, CAF) y de cada petición que cambia algo: actor "
                  "(usuario:<id> o apikey:<id>), método, ruta, código HTTP e IP; nunca el cuerpo (fork, 0003).",
     "usuarios": "Cuentas de acceso (JWT), rol administrador. cuenta_id en otras tablas apunta aquí. "
                 "clave_cambiada_en invalida los JWT anteriores (fork, 0003).",
-    "rvd_envios": "Registro de Ventas Diario de boletas: una fila por emisor, día y secuencia.",
+    "rvd_envios": "Registro de Ventas Diario de boletas: una fila por emisor, día, secuencia y ambiente.",
     "valores": "UF, UTM y dólar por fecha (referencia pública del SII).",
     "api_keys": "Tokens de los sistemas que llaman a la API, rol integracion (permisos en core/autorizacion.py). "
                 "Solo el hash SHA-256. Renovar cambia el secreto y conserva el id (fork, 0003).",
-    "folios_gestion": "Estado de la reposición automática de folios por clave (rut y tipo).",
+    "folios_gestion": "Estado de la reposición automática de folios por clave (rut|tipo|ambiente).",
     "certificados": "Certificados .p12 y su contraseña, cifrados con Fernet (L6).",
     "claves_sii": "Claves del portal del SII de cada empresa, cifradas.",
     "negocios": "Empresas emisoras de la cuenta y sus datos de carátula; cert_id es el certificado con que firman.",
     "rcv_documentos": "Registro de Compras y Ventas bajado del SII.",
     "resolucion_cache": "Resolución SII de cada emisor por ambiente (caché de la consulta pública).",
-    "emisiones": "Ventas de cada integración (origen + id_externo): huella del JSON y el documento que las atiende. "
+    "emisiones": "Ventas de cada integración (origen + id_externo + ambiente): huella del JSON y el documento que las atiende. "
                  "dte_id NULL si el folio de un intento fallido pasó a otra venta (fork, 0002).",
 }
 
-# (desde, hacia, nota): relaciones lógicas, sin FOREIGN KEY en la base.
+# (desde, hacia, nota): relaciones lógicas, sin FOREIGN KEY en la base. Las de `ambiente` sí son
+# llaves foráneas reales (0005).
 RELACIONES = [
+    *[(f"{t}.ambiente", "ambientes.codigo", "llave foránea (0005)")
+      for t in ("dtes", "cafs", "emisiones", "rvd_envios", "negocios", "resolucion_cache")],
     ("certificados.cuenta_id", "usuarios.id", "cuenta dueña"),
     ("claves_sii.cuenta_id", "usuarios.id", "cuenta dueña"),
     ("negocios.cuenta_id", "usuarios.id", "cuenta dueña"),

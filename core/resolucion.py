@@ -22,6 +22,7 @@ import logging
 from typing import Optional, Tuple
 
 from core import database
+from core.ambiente import SIMULACION, ambiente_actual
 from core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -58,7 +59,7 @@ def _iso(fecha: str) -> Optional[str]:
 def fijar_resolucion_local(rut: str, fecha_iso: str, numero: int, ambiente: Optional[str] = None) -> None:
     """Fija en memoria la resolución de `rut` para que `resolucion_emisor` NO consulte al
     SII. Para emisores ficticios (simulación) o pruebas sin red. No toca la BD."""
-    _MEM[(rut, ambiente or settings.sii_ambiente)] = (fecha_iso, int(numero))
+    _MEM[(rut, ambiente or ambiente_actual())] = (fecha_iso, int(numero))
 
 
 def _cache_get(rut: str, ambiente: str) -> Optional[Tuple[str, int]]:
@@ -110,8 +111,10 @@ def resolucion_emisor(rut: str, ambiente: Optional[str] = None,
         refrescar: fuerza re-consulta al SII (ignora el caché). Úsalo si la resolución de
             una empresa cambió (p. ej. pasó a producción).
     """
-    ambiente = ambiente or settings.sii_ambiente
+    ambiente = ambiente or ambiente_actual()
     rut = (rut or "").strip()
+    if ambiente == SIMULACION:   # modo demo: al SII no se le pregunta nada
+        return _MEM.get((rut, ambiente)) or (settings.sii_fecha_resolucion_cert, 0)
     if rut and not refrescar:
         hit = _cache_get(rut, ambiente)
         if hit:
@@ -131,4 +134,7 @@ def resolucion_emisor(rut: str, ambiente: Optional[str] = None,
                     return (fecha_iso, numero)
         except Exception as e:  # noqa: BLE001 — fallback seguro, la emisión sigue
             logger.warning("resolucion_emisor(%s): consulta SII falló (%s); uso el default", rut, e)
-    return settings.resolucion
+    # El default del ambiente PEDIDO (no el de `SII_AMBIENTE`): L4.
+    if ambiente == "produccion":
+        return settings.sii_fecha_resolucion, settings.sii_numero_resolucion
+    return settings.sii_fecha_resolucion_cert, settings.sii_numero_resolucion_cert

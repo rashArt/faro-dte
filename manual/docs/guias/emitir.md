@@ -151,8 +151,6 @@ flowchart LR
 No hace falta mandarlos: Faro usa los de la empresa configurada (ver
 [Configurar la empresa](configurar-empresa.md)).
 
-- Si la instancia tiene **varias** empresas, indica cuál con `"rut_emisor": "77777777-7"` dentro
-  de `dte`.
 - Si mandas el bloque `emisor` completo, Faro usa ese en vez del configurado.
 
 ## La respuesta
@@ -179,10 +177,10 @@ No hace falta mandarlos: Faro usa los de la empresa configurada (ver
 | `folio` | El número del documento ante el SII. |
 | `monto_total` | El total calculado por Faro. Compáralo con el de tu sistema. |
 | `estado` | Siempre `generado` al emitir. Ver [Estados](../referencia/estados.md). |
-| `envio` | `programado`: Faro lo enviará. `no_solicitado`: mandaste `enviar: false`. `desactivado`: la instancia no envía al SII. En un reintento, el estado actual del documento. |
+| `envio` | `programado`: Faro lo enviará. `no_solicitado`: mandaste `enviar: false`. `desactivado`: la instancia no envía al SII. `simulacion`: la empresa está en modo demo y el documento nunca se envía. En un reintento, el estado actual del documento. |
 | `repetido` | `true` si el `id_externo` ya tenía este documento y no se creó uno nuevo. |
 | `xml_envio_b64` | El XML firmado, en base64. Opcional: puedes archivarlo o descargarlo después. |
-| `ambiente` | `certificacion` o `produccion`. |
+| `ambiente` | `simulacion` (demo), `certificacion` o `produccion`. |
 
 La respuesta trae además `xml_dte_path`, `pdf_path` y `xml_envio_path`. Son rutas internas del
 servidor: no las uses. El PDF y el XML se descargan con las rutas de

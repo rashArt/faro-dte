@@ -32,6 +32,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 from core import datos, reloj
+from core.ambiente import ambiente_actual, usa_sii
 from core.config import settings
 from core.errors import ConflictoError, RecursoNoEncontrado, SIIError
 from core.models import registrar_log
@@ -75,6 +76,10 @@ def activo() -> bool:
 def programar(dte_id: int) -> str:
     """Deja el documento para que el despacho lo envíe y siga su veredicto. Devuelve qué pasó
     con el envío: `programado`, `desactivado` (ENVIO_SII) o el estado si ya no está por enviar."""
+    with datos.transaccion() as con:
+        fila = con.execute("SELECT ambiente FROM dtes WHERE id=?", (dte_id,)).fetchone()
+    if fila is not None and not usa_sii(fila["ambiente"]):
+        return "simulacion"      # modo demo: el documento existe, pero nunca sale al SII
     if not activo():
         return "desactivado"
     with datos.transaccion() as con:
@@ -90,6 +95,10 @@ def programar(dte_id: int) -> str:
 def enviar_ahora(dte_id: int) -> dict:
     """Envía ya (`POST /dte/{id}/enviar`). Un documento ya enviado no se reenvía: devuelve su
     estado. Lo deja con `seguimiento`, así el despacho sigue su veredicto."""
+    ambiente = _documento(dte_id)["ambiente"]
+    if not usa_sii(ambiente):
+        raise ConflictoError(f"El documento {dte_id} es del ambiente {ambiente} (demo): no se envía al SII.",
+                             codigo="ambiente_sin_sii", detalle={"dte_id": dte_id, "ambiente": ambiente})
     if not activo():
         raise ConflictoError("El envío al SII está desactivado en esta instancia (ENVIO_SII).",
                              codigo="envio_desactivado")
@@ -192,7 +201,7 @@ class ProgramadorDespacho:
     def iniciar(self) -> None:
         if self._tarea is None or self._tarea.done():
             self._tarea = asyncio.create_task(self._bucle(), name="despacho-sii")
-            log.info("Despacho al SII iniciado (cada %ds, ambiente %s)", self.intervalo_seg, settings.sii_ambiente)
+            log.info("Despacho al SII iniciado (cada %ds, ambiente %s)", self.intervalo_seg, ambiente_actual())
 
     async def detener(self) -> None:
         if self._tarea is None:
@@ -340,7 +349,13 @@ def _cliente(doc):
     from core.adaptadores.sii import ClienteBoletas, ClienteFacturas
     from core.sii import AmbienteSII
     clase = ClienteBoletas if doc["tipo_dte"] in TIPOS_BOLETA else ClienteFacturas
-    return clase(_certificado(doc), AmbienteSII(settings.sii_ambiente))
+    # El ambiente en que NACIÓ el documento, no el actual de la instancia: uno de certificación
+    # se envía y se consulta en certificación aunque la instancia ya esté en producción (L1).
+    ambiente = doc["ambiente"] or ambiente_actual()
+    if not usa_sii(ambiente):
+        raise ConflictoError(f"El documento {doc['id']} es del ambiente {ambiente}: no se envía al SII.",
+                             codigo="ambiente_sin_sii")
+    return clase(_certificado(doc), AmbienteSII(ambiente))
 
 
 def _certificado(doc):

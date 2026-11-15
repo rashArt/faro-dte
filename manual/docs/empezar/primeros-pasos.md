@@ -3,18 +3,39 @@
 En esta guía emites tu primera factura contra una instancia de pruebas, descargas el PDF y
 consultas su estado.
 
+## Quién hace qué
+
+Hay dos personas (a veces la misma) y cada una usa su credencial:
+
+```mermaid
+flowchart LR
+    I["Quien instala<br/>despliega la instancia"] -- "usuario admin y<br/>su contraseña" --> A["Administrador<br/>configura la empresa<br/>y crea los tokens"]
+    A -- "URL y token dte_…" --> D["Tu sistema<br/>emite y consulta"]
+```
+
+1. **Quien instala** la instancia crea, en el primer arranque, el único usuario: `admin`. Su
+   contraseña es la de `ADMIN_PASSWORD` del servidor o, si no la definió, una aleatoria que sale
+   **una sola vez** en el log. Se la entrega al administrador.
+2. **El administrador** entra con ese usuario, configura la empresa
+   ([Configurar la empresa](../guias/configurar-empresa.md)) y **crea un token de integración**
+   para tu sistema ([Crear un token](autenticacion.md#crear-un-token-de-integracion)).
+3. **Tu sistema** usa ese token en cada llamada. Nunca usa la contraseña del administrador.
+
 ## Antes de empezar
 
 Pide al administrador de Faro:
 
 - [x] **La URL de la instancia**, por ejemplo `http://faro-acme:8000`. Es una dirección de la red
   interna: tu sistema debe correr en esa misma red.
-- [x] **Un token de integración** (empieza con `dte_`). Se muestra una sola vez: guárdalo como un
-  secreto de tu sistema, nunca en el código ni en el repositorio.
-- [x] **La empresa configurada** (certificado, CAF y datos del emisor). Si te toca hacerlo a ti,
-  sigue [Configurar la empresa](../guias/configurar-empresa.md).
+- [x] **Un token de integración** (empieza con `dte_`). El administrador lo crea para tu sistema
+  y se muestra una sola vez: guárdalo como un secreto, nunca en el código ni en el repositorio.
+- [x] **La empresa configurada** (datos del emisor, certificado y CAF).
 
-Para desarrollar, lo normal es una instancia con el **envío al SII desactivado**: emite documentos
+Si tú eres el administrador, haz primero
+[Crear un token de integración](autenticacion.md#crear-un-token-de-integracion) y
+[Configurar la empresa](../guias/configurar-empresa.md).
+
+Para aprender y desarrollar, lo normal es la empresa en **modo demo**: emite documentos
 completos, pero nada sale al SII. Ver [Ambientes](../referencia/ambientes.md).
 
 En los ejemplos se usan estas variables:
@@ -137,10 +158,10 @@ Respuesta (resumida):
   "tipo_dte": 33,
   "monto_total": 11900,
   "estado": "generado",
-  "envio": "desactivado",
+  "envio": "simulacion",
   "id_externo": "pedido-1042",
   "repetido": false,
-  "ambiente": "certificacion",
+  "ambiente": "simulacion",
   "mensaje": "DTE emitido. Folio 1042."
 }
 ```
@@ -150,8 +171,8 @@ Fíjate en tres cosas:
 - **No mandaste los datos de tu empresa** (`emisor`). Faro los toma de la configuración de la
   empresa.
 - **El precio de la factura es neto.** Faro calculó el IVA: 10.000 + 1.900 = 11.900.
-- **`envio: "desactivado"`** indica que la instancia de pruebas no envía al SII. En certificación y
-  producción verás `"programado"`.
+- **`envio: "simulacion"`** indica que la empresa está en modo demo y el documento no se envía
+  al SII. En certificación y producción verás `"programado"`.
 
 ## 3. Descarga el PDF
 
@@ -175,7 +196,7 @@ Respuesta (resumida):
  "motivo_sii": null, "envio_sii": "desactivado"}
 ```
 
-Con el envío desactivado, el estado se queda en `generado`. En una instancia que envía al SII
+En modo demo, el estado se queda en `generado`. En una instancia que envía al SII
 verás pasar el documento a `enviado` y luego a `aceptado` (o `rechazado`). Ver
 [Seguir el veredicto del SII](../guias/seguir-veredicto.md).
 

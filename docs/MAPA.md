@@ -74,7 +74,11 @@ del fork (fase 4): `core/autorizacion.py` (lo que puede un token `integracion`),
 (intentos fallidos), `api/auditoria.py` (quién hizo qué) y `GET /api/v1/auditoria`. Despacho
 al SII por documento (fase 5): `core/servicios/envio.py` envía el sobre guardado y sigue el
 veredicto en segundo plano (`POST /dte/{id}/enviar`, `GET /dte/{id}/estado`, `GET /dte/alertas`,
-`ENVIO_SII`); guía para integraciones en [`deploy/INTEGRACION.md`](deploy/INTEGRACION.md). El manual
+`ENVIO_SII`); guía para integraciones en [`deploy/INTEGRACION.md`](deploy/INTEGRACION.md). Una
+empresa por instancia y su ambiente (fase 7): `core/ambiente.py` (`ambiente_actual()`, el único
+lugar que decide el ambiente; `usa_sii()` dice si se habla con el SII: en modo demo, nunca), `core/empresa.py` y `api/routes/empresa.py` (`/api/v1/empresa`,
+cambio de ambiente con requisitos), selección de CAF con vigencia en `core/models.py`
+(`_elegir_caf`, `usar_caf`) y migración `0005` (tabla `ambientes`, llaves foráneas). El manual
 para quien consume la API (con diagramas, sin detalles internos) vive aparte en `manual/` (Zensical,
 publicado en GitHub Pages por `.github/workflows/manual.yml`): un cambio en una ruta se refleja en los dos.
 

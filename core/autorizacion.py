@@ -37,6 +37,8 @@ _PREFIJOS_INTEGRACION = (
 _RUTAS_INTEGRACION = {
     ("GET", "/api/v1/auth/me"),
     ("POST", "/api/v1/apikeys/propia/renovar"),
+    ("GET", "/api/v1/empresa"),            # datos y ambiente de la empresa (fase 7); cambiarlos, no
+    ("GET", "/api/v1/empresa/folios"),
 }
 # Dentro de los prefijos permitidos, lo que igual queda para el administrador: el listado general
 # de documentos y las alertas del despacho (un token ve solo los suyos, uno por uno).
@@ -44,6 +46,7 @@ _NEGADO_INTEGRACION = {
     ("GET", "/api/v1/dte/documentos"),
     ("GET", "/api/v1/dte/documentos/emisores"),
     ("GET", "/api/v1/dte/alertas"),
+    ("PUT", "/api/v1/caf/{caf_id}/en-uso"),   # fijar el CAF en uso (fase 7)
 }
 
 

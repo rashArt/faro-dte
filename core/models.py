@@ -10,12 +10,14 @@ from __future__ import annotations
 import json
 import time
 from contextvars import ContextVar
-from datetime import datetime, timezone
+from calendar import monthrange
+from datetime import date, datetime, timezone
 from typing import Optional
 
 from sqlalchemy.exc import OperationalError
 
-from core import datos
+from core import datos, reloj
+from core.ambiente import SIMULACION, resolver
 from core.database import ejecutar, obtener_todos, obtenerUno, get_db
 
 
@@ -133,11 +135,13 @@ def obtener_dte(dte_id: int) -> Optional[dict]:
     return dict(row) if row else None
 
 
-def obtener_dte_por_folio(rut_emisor: str, tipo_dte: int, folio: int) -> Optional[dict]:
-    """Obtiene un DTE por RUT emisor, tipo y folio."""
+def obtener_dte_por_folio(rut_emisor: str, tipo_dte: int, folio: int,
+                          ambiente: Optional[str] = None) -> Optional[dict]:
+    """Obtiene un DTE por RUT emisor, tipo y folio, en `ambiente` (por defecto, el actual): el
+    mismo folio existe en certificación y en producción."""
     row = obtenerUno(
-        "SELECT * FROM dtes WHERE rut_emisor=? AND tipo_dte=? AND folio=?",
-        (rut_emisor, tipo_dte, folio),
+        "SELECT * FROM dtes WHERE rut_emisor=? AND tipo_dte=? AND folio=? AND ambiente=?",
+        (rut_emisor, tipo_dte, folio, resolver(ambiente)),
     )
     return dict(row) if row else None
 
@@ -226,9 +230,11 @@ def registrar_caf(
     folio_hasta: int,
     fecha_autorizacion: str,
     caf_xml: str,
+    ambiente: Optional[str] = None,
 ) -> int:
     """
-    Registra un nuevo CAF en la base de datos.
+    Registra un nuevo CAF en la base de datos, en `ambiente` (por defecto, el actual): los CAF
+    de certificación y de producción son distintos y no se mezclan.
 
     Returns:
         ID del CAF registrado.
@@ -238,27 +244,105 @@ def registrar_caf(
         cursor = conn.execute(
             """INSERT INTO cafs
             (tipo_dte, rut_emisor, folio_desde, folio_hasta, folio_siguiente,
-             fecha_autorizacion, caf_xml, creado_en)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+             fecha_autorizacion, caf_xml, creado_en, ambiente)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (tipo_dte, rut_emisor, folio_desde, folio_hasta, folio_desde,
-             fecha_autorizacion, caf_xml, ahora),
+             fecha_autorizacion, caf_xml, ahora, resolver(ambiente)),
         )
         return cursor.lastrowid
 
 
-def obtener_caf_activo(rut_emisor: str, tipo_dte: int) -> Optional[dict]:
-    """Obtiene el CAF activo para un emisor y tipo de DTE."""
-    row = obtenerUno(
-        "SELECT * FROM cafs WHERE rut_emisor=? AND tipo_dte=? AND activo=1 ORDER BY folio_desde DESC LIMIT 1",
-        (rut_emisor, tipo_dte),
-    )
-    return dict(row) if row else None
+# ---- Qué CAF se usa (fase 7 de docs/deploy/PLAN.md) ------------------------------------------
+# Una empresa puede tener varios CAF del mismo tipo. Los folios salen del CAF **en uso**
+# (`cafs.en_uso`); cuando se agota o vence, el motor pasa solo al siguiente: el vigente que vence
+# primero. El administrador puede fijar otro (`usar_caf`). Nunca se emite con un CAF vencido: el
+# SII rechaza el documento (`CAF-3-517`) y el folio se pierde.
+MESES_VIGENCIA_CAF = 6   # Res. Ex. SII 58/2017. Se aplica a todos los tipos (decisión de la fase 7).
 
 
-def listar_cafs(rut_emisor: Optional[str] = None, tipo_dte: Optional[int] = None) -> list[dict]:
-    """Lista todos los CAFs registrados."""
+def vence_caf(fecha_autorizacion) -> Optional[date]:
+    """El primer día en que el CAF ya no se usa: su fecha de autorización más 6 meses."""
+    try:
+        fa = date.fromisoformat(str(fecha_autorizacion)[:10])
+    except ValueError:
+        return None
+    mes = fa.month - 1 + MESES_VIGENCIA_CAF
+    anio, mes = fa.year + mes // 12, mes % 12 + 1
+    return date(anio, mes, min(fa.day, monthrange(anio, mes)[1]))
+
+
+def caf_vencido(caf, hoy: Optional[date] = None) -> bool:
+    """¿Pasaron los 6 meses? Los CAF de la demo (`simulacion`) no vencen: nunca van al SII."""
+    if caf["ambiente"] == SIMULACION:
+        return False
+    vence = vence_caf(caf["fecha_autorizacion"])
+    return vence is not None and (hoy or reloj.ahora().date()) >= vence
+
+
+def caf_utilizable(caf, hoy: Optional[date] = None) -> bool:
+    return bool(caf["activo"]) and caf["folio_siguiente"] <= caf["folio_hasta"] and not caf_vencido(caf, hoy)
+
+
+def _elegir_caf(filas) -> Optional[dict]:
+    """De los CAF activos de un emisor, tipo y ambiente: el que está en uso si todavía sirve; si
+    no, el vigente con folios que vence primero."""
+    utiles = [dict(f) for f in filas if caf_utilizable(f)]
+    if not utiles:
+        return None
+    en_uso = next((c for c in utiles if c["en_uso"]), None)
+    return en_uso or min(utiles, key=lambda c: (str(c["fecha_autorizacion"])[:10], c["folio_desde"]))
+
+
+_SQL_CAFS = ("SELECT * FROM cafs WHERE rut_emisor=? AND tipo_dte=? AND ambiente=? AND activo=1 "
+             "ORDER BY folio_desde")
+
+
+def obtener_caf_activo(rut_emisor: str, tipo_dte: int, ambiente: Optional[str] = None) -> Optional[dict]:
+    """El CAF del que sale el próximo folio de un emisor y tipo, en `ambiente` (por defecto, el
+    actual). None si no hay ninguno vigente con folios."""
+    return _elegir_caf(obtener_todos(_SQL_CAFS, (rut_emisor, tipo_dte, resolver(ambiente))))
+
+
+def motivo_sin_folios(rut_emisor: str, tipo_dte: int, ambiente: str, conn=None) -> str:
+    """Por qué no hay folios: `sin_caf`, `vencido` (hay CAF con folios, pero pasaron los 6 meses)
+    o `agotado`. Con `conn`, lee por esa conexión (la de la transacción en curso)."""
+    parametros = (rut_emisor, tipo_dte, ambiente)
+    filas = (conn.execute(_SQL_CAFS, parametros).fetchall() if conn is not None
+             else obtener_todos(_SQL_CAFS, parametros))
+    if not filas:
+        return "sin_caf"
+    return "vencido" if any(f["folio_siguiente"] <= f["folio_hasta"] for f in filas) else "agotado"
+
+
+def usar_caf(caf_id: int) -> dict:
+    """El administrador fija el CAF del que salen los folios de su tipo y ambiente. Tiene que
+    estar activo, vigente y con folios."""
+    from core.errors import FolioError, RecursoNoEncontrado
+    with datos.transaccion(inmediata=True) as conn:
+        caf = conn.execute("SELECT * FROM cafs WHERE id=?", (caf_id,)).fetchone()
+        if caf is None:
+            raise RecursoNoEncontrado(f"CAF {caf_id} no existe")
+        if not caf_utilizable(caf):
+            motivo = ("está desactivado" if not caf["activo"] else
+                      "está vencido (más de 6 meses desde su autorización)" if caf_vencido(caf) else
+                      "no tiene folios disponibles")
+            raise FolioError(f"El CAF {caf_id} no se puede usar: {motivo}.",
+                             detalle={"caf_id": caf_id, "vence": str(vence_caf(caf["fecha_autorizacion"]))})
+        conn.execute("UPDATE cafs SET en_uso = CASE WHEN id=? THEN 1 ELSE 0 END "
+                     "WHERE rut_emisor=? AND tipo_dte=? AND ambiente=?",
+                     (caf_id, caf["rut_emisor"], caf["tipo_dte"], caf["ambiente"]))
+        return {**dict(caf), "en_uso": 1}
+
+
+def listar_cafs(rut_emisor: Optional[str] = None, tipo_dte: Optional[int] = None,
+                ambiente: Optional[str] = None) -> list[dict]:
+    """Lista todos los CAFs registrados (de todos los ambientes, salvo que se pida uno)."""
     condiciones = []
     params = []
+
+    if ambiente:
+        condiciones.append("ambiente=?")
+        params.append(ambiente)
 
     if rut_emisor:
         condiciones.append("rut_emisor=?")
@@ -284,9 +368,9 @@ def desactivar_caf(caf_id: int) -> bool:
     return True
 
 
-def obtener_siguiente_folio(rut_emisor: str, tipo_dte: int) -> Optional[int]:
+def obtener_siguiente_folio(rut_emisor: str, tipo_dte: int, ambiente: Optional[str] = None) -> Optional[int]:
     """Obtiene el siguiente folio disponible para un emisor y tipo de DTE."""
-    caf = obtener_caf_activo(rut_emisor, tipo_dte)
+    caf = obtener_caf_activo(rut_emisor, tipo_dte, ambiente)
     if not caf:
         return None
     if caf["folio_siguiente"] > caf["folio_hasta"]:
@@ -294,9 +378,9 @@ def obtener_siguiente_folio(rut_emisor: str, tipo_dte: int) -> Optional[int]:
     return caf["folio_siguiente"]
 
 
-def consumir_folio(rut_emisor: str, tipo_dte: int, folio: int) -> bool:
+def consumir_folio(rut_emisor: str, tipo_dte: int, folio: int, ambiente: Optional[str] = None) -> bool:
     """Marca un folio como consumido (avanza folio_siguiente)."""
-    caf = obtener_caf_activo(rut_emisor, tipo_dte)
+    caf = obtener_caf_activo(rut_emisor, tipo_dte, ambiente)
     if not caf:
         return False
     if folio < caf["folio_desde"] or folio > caf["folio_hasta"]:
@@ -306,7 +390,7 @@ def consumir_folio(rut_emisor: str, tipo_dte: int, folio: int) -> bool:
     return True
 
 
-def consumir_siguiente_folio(rut_emisor: str, tipo_dte: int) -> Optional[int]:
+def consumir_siguiente_folio(rut_emisor: str, tipo_dte: int, ambiente: Optional[str] = None) -> Optional[int]:
     """
     Obtiene y consume atómicamente el siguiente folio disponible para un emisor y tipo de DTE.
 
@@ -319,11 +403,14 @@ def consumir_siguiente_folio(rut_emisor: str, tipo_dte: int) -> Optional[int]:
     """
     max_retries = 3
     retry_delay = 0.05  # 50ms
+    # Antes de abrir la transacción: leer el ambiente usa otra conexión, y pedirla con el
+    # candado tomado agota el pool cuando hay muchas emisiones a la vez.
+    ambiente = resolver(ambiente)
 
     for attempt in range(max_retries):
         try:
             with datos.transaccion(inmediata=True) as conn:
-                caf = bloquear_caf_activo(conn, rut_emisor, tipo_dte)
+                caf = bloquear_caf_activo(conn, rut_emisor, tipo_dte, ambiente)
                 if not caf:
                     return None
                 return avanzar_folio(conn, caf)
@@ -334,19 +421,22 @@ def consumir_siguiente_folio(rut_emisor: str, tipo_dte: int) -> Optional[int]:
             raise
 
 
-def bloquear_caf_activo(conn, rut_emisor: str, tipo_dte: int):
-    """Fila del CAF activo **con candado**, dentro de una `datos.transaccion(inmediata=True)`.
+def bloquear_caf_activo(conn, rut_emisor: str, tipo_dte: int, ambiente: str):
+    """El CAF del que sale el próximo folio (ver `_elegir_caf`), en `ambiente` y **con candado**,
+    dentro de una `datos.transaccion(inmediata=True)`. Si el CAF en uso se agotó o venció, deja
+    marcado el que sigue. `ambiente` llega resuelto (`core.ambiente.resolver`): aquí no se abre
+    otra conexión.
 
     En PostgreSQL el candado es `SELECT … FOR UPDATE` sobre la fila; en SQLite ya lo dio el
     `BEGIN IMMEDIATE` de la transacción. Es el único lugar donde se toma (L7): lo usan
     `consumir_siguiente_folio` y la reserva del servicio de emisión."""
     candado = " FOR UPDATE" if datos.es_postgres() else ""
-    return conn.execute(
-        "SELECT id, folio_siguiente, folio_desde, folio_hasta, caf_xml FROM cafs "
-        "WHERE rut_emisor=? AND tipo_dte=? AND activo=1 "
-        "ORDER BY folio_desde DESC LIMIT 1" + candado,
-        (rut_emisor, tipo_dte),
-    ).fetchone()
+    caf = _elegir_caf(conn.execute(_SQL_CAFS + candado, (rut_emisor, tipo_dte, ambiente)).fetchall())
+    if caf is not None and not caf["en_uso"]:
+        conn.execute("UPDATE cafs SET en_uso = CASE WHEN id=? THEN 1 ELSE 0 END "
+                     "WHERE rut_emisor=? AND tipo_dte=? AND ambiente=?",
+                     (caf["id"], rut_emisor, tipo_dte, ambiente))
+    return caf
 
 
 def avanzar_folio(conn, caf) -> Optional[int]:

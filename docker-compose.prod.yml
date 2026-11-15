@@ -21,7 +21,10 @@ x-faro: &faro
     - TZ=America/Santiago
     - DATABASE_URL=postgresql+psycopg://faro:${POSTGRES_PASSWORD:?define POSTGRES_PASSWORD en .env}@db:5432/faro
     # Decisiones explícitas por cliente: sin ellas el compose no levanta.
-    - SII_AMBIENTE=${SII_AMBIENTE:?define SII_AMBIENTE en .env (certificacion o produccion)}
+    # Solo el ambiente con que NACE la empresa: simulacion (modo demo: nada sale al SII ni se le
+    # consulta el RUT). Después es de la empresa y se cambia por la API
+    # (PUT /api/v1/empresa/ambiente, que valida el RUT en el SII): no se toca aquí.
+    - SII_AMBIENTE=${SII_AMBIENTE:-simulacion}
     - ENVIO_SII=${ENVIO_SII:?define ENVIO_SII en .env (activo o desactivado)}
   logging:
     driver: json-file

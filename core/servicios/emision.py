@@ -46,7 +46,9 @@ from core.errors import (
     SinFoliosError,
     ValidacionError,
 )
-from core.models import avanzar_folio, bloquear_caf_activo, obtener_caf_activo, registrar_log
+from core.ambiente import ambiente_actual
+from core.models import (avanzar_folio, bloquear_caf_activo, motivo_sin_folios, obtener_caf_activo,
+                         registrar_log)
 from core.orchestrator import OrquestadorDTE, ruta_desde_bd, ruta_para_bd
 from core.orchestrator_boleta import TIPOS_BOLETA, OrquestadorBoleta
 from core.rut import validar_rut
@@ -103,7 +105,7 @@ def emitir(dte_input: DTEInput, solicitante: Solicitante, *, id_externo: Optiona
 
     # Atajo sin candado: el reintento de una venta ya timbrada no paga el ensayo.
     if id_externo:
-        emision, dte = _emision_y_documento(datos.transaccion, solicitante.origen, id_externo)
+        emision, dte = _emision_y_documento(datos.transaccion, solicitante.origen, id_externo, ambiente_actual())
         if emision is not None:
             try:
                 _decidir(id_externo, emision, dte, huella, explicito)
@@ -113,9 +115,10 @@ def emitir(dte_input: DTEInput, solicitante: Solicitante, *, id_externo: Optiona
     orq = OrquestadorBoleta() if tipo in TIPOS_BOLETA else OrquestadorDTE()
     cert = certificado or _certificado(solicitante, dte_input.emisor.rut, orq)
     _prevalidar(dte_input)
-    caf_db = obtener_caf_activo(dte_input.emisor.rut, tipo)
+    ambiente = ambiente_actual()
+    caf_db = obtener_caf_activo(dte_input.emisor.rut, tipo, ambiente)
     if not caf_db:
-        raise _sin_folios(dte_input.emisor.rut, tipo)
+        raise _sin_folios(dte_input.emisor.rut, tipo, ambiente)
     _ensayar(orq, dte_input, cert, ManejadorCAF(caf_db["caf_xml"].encode("utf-8")), explicito)
 
     try:
@@ -140,22 +143,16 @@ def emisor_del_negocio(cuenta_id: Optional[int], rut: Optional[str] = None) -> E
     """El emisor armado con los datos del negocio (pantalla "Mi empresa", `PUT
     /keystore/negocios/{id}`). Sin `rut`, el único negocio de la cuenta. 422 si hay varios y no
     se dice cuál, si no existe, o si le faltan datos que el SII exige."""
-    from core.negocios import listar_negocios
-    negocios = listar_negocios(cuenta_id) if cuenta_id is not None else []
-    if rut:
-        negocios = [n for n in negocios if n["rut"] == rut]
-    if not negocios:
-        raise ValidacionError("No hay negocio para emitir sin `emisor`: créalo en el keystore o envía `emisor`.",
-                              detalle={"rut_emisor": rut})
-    if len(negocios) > 1:
-        raise ValidacionError("La cuenta tiene varios negocios: indica `rut_emisor` o envía `emisor`.",
-                              detalle={"negocios": [n["rut"] for n in negocios]})
-    neg = negocios[0]
+    from core import empresa
+    neg = empresa.obtener()
+    if neg is None or (rut and rut.replace(".", "").upper() != neg["rut"].upper()):
+        raise ValidacionError("No hay empresa para emitir sin `emisor`: créala con PUT /api/v1/empresa "
+                              "o envía `emisor`.", detalle={"rut_emisor": rut})
     faltan = [c for c in _CAMPOS_EMISOR if neg.get(c) in (None, "")]
     if faltan:
         raise ValidacionError(
-            f"Al negocio {neg['rut']} le faltan datos del emisor: {', '.join(faltan)}. Complétalos con "
-            f"PUT /api/v1/keystore/negocios/{neg['id']} o envía `emisor`.",
+            f"A la empresa {neg['rut']} le faltan datos del emisor: {', '.join(faltan)}. Complétalos con "
+            "PUT /api/v1/empresa o envía `emisor`.",
             detalle={"negocio_id": neg["id"], "faltan": faltan})
     try:
         return EmisorModel(rut=neg["rut"], telefono=neg.get("telefono") or None, email=neg.get("email") or None,
@@ -205,14 +202,15 @@ def _reservar(dte_input: DTEInput, solicitante: Solicitante, id_externo: Optiona
               huella: str, explicito: Optional[int]) -> _Reserva:
     rut, tipo = dte_input.emisor.rut, dte_input.tipo_dte.value
     ahora = _ahora()
+    ambiente = ambiente_actual()
     with datos.transaccion(inmediata=True) as con:
-        caf = bloquear_caf_activo(con, rut, tipo)
+        caf = bloquear_caf_activo(con, rut, tipo, ambiente)
         if not caf:
-            raise _sin_folios(rut, tipo)
+            raise _sin_folios(rut, tipo, ambiente, con)
 
         emision = propia = None
         if id_externo:
-            emision, dte = _emision_y_documento(lambda: _SinCerrar(con), solicitante.origen, id_externo)
+            emision, dte = _emision_y_documento(lambda: _SinCerrar(con), solicitante.origen, id_externo, ambiente)
             if emision is not None and _decidir(id_externo, emision, dte, huella, explicito) == "reintentar":
                 # Su propia fila sin timbre: mismo folio, si sigue siendo del mismo emisor, tipo y CAF.
                 if (dte["rut_emisor"], dte["tipo_dte"]) == (rut, tipo) \
@@ -222,20 +220,20 @@ def _reservar(dte_input: DTEInput, solicitante: Solicitante, id_externo: Optiona
         if propia is not None:
             fila, folio = propia, propia["folio"]
         elif explicito:
-            fila, folio = _folio_explicito(con, caf, rut, tipo, explicito), explicito
+            fila, folio = _folio_explicito(con, caf, rut, tipo, explicito, ambiente), explicito
         else:
             fila = con.execute(
-                "SELECT id, folio, intento FROM dtes WHERE rut_emisor=? AND tipo_dte=? "
+                "SELECT id, folio, intento FROM dtes WHERE rut_emisor=? AND tipo_dte=? AND ambiente=? "
                 "AND folio BETWEEN ? AND ? AND (estado='error' OR (estado='reservado' AND actualizado_en < ?)) "
                 "ORDER BY folio LIMIT 1",
-                (rut, tipo, caf["folio_desde"], caf["folio_hasta"], _vencimiento(ahora)),
+                (rut, tipo, ambiente, caf["folio_desde"], caf["folio_hasta"], _vencimiento(ahora)),
             ).fetchone()
             if fila is not None:
                 folio = fila["folio"]
             else:
                 folio = avanzar_folio(con, caf)
                 if folio is None:
-                    raise _sin_folios(rut, tipo)
+                    raise _sin_folios(rut, tipo, ambiente, con)
 
         totales = _totales(dte_input)
         valores = (tipo, folio, rut, dte_input.receptor.rut, dte_input.receptor.razon_social,
@@ -248,7 +246,7 @@ def _reservar(dte_input: DTEInput, solicitante: Solicitante, id_externo: Optiona
                 "fecha_emision=?, monto_neto=?, monto_exento=?, iva=?, monto_total=?, estado='reservado', "
                 "intento=?, track_id=NULL, xml_firmado=NULL, pdf_path=NULL, motivo_error=NULL, ambiente=?, "
                 "origen=?, actualizado_en=? WHERE id=?",
-                (*valores, intento, settings.sii_ambiente, solicitante.origen, ahora, dte_id))
+                (*valores, intento, ambiente, solicitante.origen, ahora, dte_id))
             # Si el folio era de otra venta (su intento falló), esa venta lo pierde: su próximo
             # reintento toma otro folio.
             con.execute("UPDATE emisiones SET dte_id=NULL, actualizado_en=? WHERE dte_id=? AND id<>?",
@@ -259,18 +257,19 @@ def _reservar(dte_input: DTEInput, solicitante: Solicitante, id_externo: Optiona
                 "INSERT INTO dtes (tipo_dte, folio, rut_emisor, rut_receptor, razon_social_receptor, "
                 "fecha_emision, monto_neto, monto_exento, iva, monto_total, estado, intento, ambiente, "
                 "origen, creado_en, actualizado_en) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'reservado', ?, ?, ?, ?, ?)",
-                (*valores, intento, settings.sii_ambiente, solicitante.origen, ahora, ahora)).lastrowid
+                (*valores, intento, ambiente, solicitante.origen, ahora, ahora)).lastrowid
 
         if emision is not None:
             con.execute("UPDATE emisiones SET huella=?, dte_id=?, actualizado_en=? WHERE id=?",
                         (huella, dte_id, ahora, emision["id"]))
         elif id_externo:
-            con.execute("INSERT INTO emisiones (origen, id_externo, huella, dte_id, creado_en, actualizado_en) "
-                        "VALUES (?, ?, ?, ?, ?, ?)", (solicitante.origen, id_externo, huella, dte_id, ahora, ahora))
+            con.execute("INSERT INTO emisiones (origen, id_externo, huella, dte_id, creado_en, actualizado_en, "
+                        "ambiente) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                        (solicitante.origen, id_externo, huella, dte_id, ahora, ahora, ambiente))
         return _Reserva(dte_id=dte_id, folio=folio, intento=intento, caf_xml=caf["caf_xml"])
 
 
-def _folio_explicito(con, caf, rut: str, tipo: int, folio: int):
+def _folio_explicito(con, caf, rut: str, tipo: int, folio: int, ambiente: str):
     """Folio elegido por el administrador (#4): dentro del CAF y nunca hacia atrás. Devuelve la
     fila sin timbre que lo tenía, si la hay, para reusarla."""
     if not caf["folio_desde"] <= folio <= caf["folio_hasta"]:
@@ -278,7 +277,8 @@ def _folio_explicito(con, caf, rut: str, tipo: int, folio: int):
                          f"[{caf['folio_desde']}-{caf['folio_hasta']}].",
                          detalle={"folio": folio, "desde": caf["folio_desde"], "hasta": caf["folio_hasta"]})
     fila = con.execute("SELECT id, folio, intento, estado, actualizado_en FROM dtes "
-                       "WHERE rut_emisor=? AND tipo_dte=? AND folio=?", (rut, tipo, folio)).fetchone()
+                       "WHERE rut_emisor=? AND tipo_dte=? AND folio=? AND ambiente=?",
+                       (rut, tipo, folio, ambiente)).fetchone()
     if fila is not None:
         if not _reusable(fila):
             raise FolioError(f"El folio {folio} ya tiene un documento (estado {fila['estado']}).",
@@ -401,13 +401,11 @@ def _certificado(solicitante: Solicitante, rut_emisor: str, orq: OrquestadorDTE)
     """El certificado del negocio del emisor (keystore, cifrado, L6). Se descifra una vez por
     proceso y se vuelve a descifrar si se reemplaza (cambia `creado`). Sin negocio con
     certificado, el de la configuración (`CERTIFICADO_PATH`), como la emisión de siempre."""
-    fila = None
-    if solicitante.cuenta_id is not None:
-        with datos.transaccion() as con:
-            fila = con.execute(
-                "SELECT c.id, c.creado FROM negocios n JOIN certificados c ON c.id = n.cert_id "
-                "WHERE n.cuenta_id=? AND n.rut=? AND c.cuenta_id=?",
-                (solicitante.cuenta_id, rut_emisor, solicitante.cuenta_id)).fetchone()
+    # El de la empresa de la instancia, la pida quien la pida (una instancia, una empresa).
+    with datos.transaccion() as con:
+        fila = con.execute(
+            "SELECT c.id, c.creado, c.cuenta_id FROM negocios n JOIN certificados c ON c.id = n.cert_id "
+            "WHERE n.rut=? ORDER BY n.id LIMIT 1", (rut_emisor,)).fetchone()
     if fila is None:
         return orq._obtener_certificado(None)
     clave = (fila["id"], fila["creado"])
@@ -415,14 +413,16 @@ def _certificado(solicitante: Solicitante, rut_emisor: str, orq: OrquestadorDTE)
         if clave not in _certificados:
             for vieja in [k for k in _certificados if k[0] == fila["id"]]:
                 del _certificados[vieja]
-            _certificados[clave] = keystore.cargar_certificado(fila["id"], solicitante.cuenta_id)
+            _certificados[clave] = keystore.cargar_certificado(fila["id"], fila["cuenta_id"])
         return _certificados[clave]
 
 
-def _emision_y_documento(abrir, origen: str, id_externo: str):
+def _emision_y_documento(abrir, origen: str, id_externo: str, ambiente: str):
     with abrir() as con:
-        emision = con.execute("SELECT id, huella, dte_id FROM emisiones WHERE origen=? AND id_externo=?",
-                              (origen, id_externo)).fetchone()
+        # La misma venta (`id_externo`) puede existir en certificación y en producción.
+        emision = con.execute("SELECT id, huella, dte_id FROM emisiones "
+                              "WHERE origen=? AND id_externo=? AND ambiente=?",
+                              (origen, id_externo, ambiente)).fetchone()
         dte = None
         if emision is not None and emision["dte_id"] is not None:
             dte = con.execute("SELECT id, rut_emisor, tipo_dte, folio, estado, intento, actualizado_en "
@@ -471,11 +471,16 @@ def _rutas(dte_id: int, intento: int, tipo: int, folio: int) -> dict:
             "pdf": carpeta / f"{doc}_{tipo}_{folio}.pdf"}
 
 
-def _sin_folios(rut: str, tipo: int) -> SinFoliosError:
+def _sin_folios(rut: str, tipo: int, ambiente: str, con=None) -> SinFoliosError:
+    motivo = motivo_sin_folios(rut, tipo, ambiente, con)
+    que = {"sin_caf": "No hay un CAF cargado en este ambiente",
+           "vencido": "El CAF cargado venció (más de 6 meses desde su autorización): sus folios ya no "
+                      "se pueden usar",
+           "agotado": "Los folios del CAF cargado se agotaron"}[motivo]
     return SinFoliosError(
-        f"No hay folios disponibles para el emisor {rut} y tipo DTE {tipo}. "
-        "Verifique que el CAF esté cargado y activo.",
-        detalle={"rut_emisor": rut, "tipo_dte": tipo})
+        f"No hay folios disponibles para el emisor {rut} y tipo DTE {tipo}. {que}. "
+        "Carga un CAF nuevo (POST /api/v1/caf).",
+        detalle={"rut_emisor": rut, "tipo_dte": tipo, "motivo": motivo, "ambiente": ambiente})
 
 
 def _ahora() -> str:

@@ -327,7 +327,15 @@ def generar_dte_simple(body: DTEInput) -> GenerarDTEResponse:
 @router.post("/enviar", response_model=EnviarDTEResponse, summary="Enviar DTE firmado al SII")
 def enviar_dte(body: EnviarDTERequest) -> EnviarDTEResponse:
     """Envía un EnvioDTE firmado al SII y retorna el TrackID."""
+    from core.ambiente import ambiente_actual
+    from core.errors import ConflictoError
     from core.schema_validator import validar_xml_dte_strict
+
+    # El ambiente es de la empresa (fase 7): el cuerpo no puede mandar un sobre a otro (L1).
+    if body.ambiente.value != ambiente_actual():
+        raise ConflictoError(
+            f"La empresa está en {ambiente_actual()}: no se envía a {body.ambiente.value}. "
+            "El ambiente se cambia con PUT /api/v1/empresa/ambiente.", codigo="ambiente_distinto")
 
     cert = _cargar_cert(_decode_b64(body.certificado_p12_b64, "El certificado"),
                         body.password_certificado)
@@ -444,7 +452,8 @@ class EmitirDTEResponse(BaseModel):
     mensaje: str
     envio: Optional[str] = Field(
         None, description="programado (Faro lo envía), no_solicitado (enviar=false), desactivado "
-                          "(ENVIO_SII) o el estado si ya no estaba por enviar")
+                          "(ENVIO_SII), simulacion (empresa en modo demo: nunca se envía) o el estado "
+                          "si ya no estaba por enviar")
 
 
 class PrevisualizarRequest(BaseModel):

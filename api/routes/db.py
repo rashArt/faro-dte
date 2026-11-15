@@ -12,20 +12,25 @@ from __future__ import annotations
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query, UploadFile, File
+from fastapi import APIRouter, Depends, Form, Query, UploadFile, File
 from api.util import leer_upload_sincrono
 from pydantic import BaseModel, Field
 
-from core.auth import requerir_autenticacion
+from core.ambiente import AMBIENTES, ambiente_actual
+from core.auth import requerir_administrador, requerir_autenticacion
+from core.database import obtenerUno
 from core.caf import ManejadorCAF
-from core.errors import CAFError, RecursoNoEncontrado, ValidacionError
+from core.errors import CAFError, ConflictoError, RecursoNoEncontrado, ValidacionError
 from core.models import (
     listar_dtes,
     contar_dtes,
     obtener_dte,
     obtener_dte_por_folio,
+    caf_vencido,
     listar_cafs,
     obtener_caf_activo,
+    usar_caf,
+    vence_caf,
     obtener_siguiente_folio,
     registrar_caf,
     listar_logs,
@@ -70,6 +75,21 @@ class CAFResponse(BaseModel):
     fecha_autorizacion: str
     activo: bool
     creado_en: str
+    # Fase 7 (fork): ambiente del CAF, si es el que está en uso y hasta cuándo sirve.
+    ambiente: Optional[str] = None
+    en_uso: bool = False
+    vence: Optional[str] = None
+    vigente: bool = True
+
+
+def _caf(c: dict) -> CAFResponse:
+    vence = vence_caf(c["fecha_autorizacion"])
+    return CAFResponse(
+        id=c["id"], tipo_dte=c["tipo_dte"], rut_emisor=c["rut_emisor"], folio_desde=c["folio_desde"],
+        folio_hasta=c["folio_hasta"], folio_siguiente=c["folio_siguiente"],
+        fecha_autorizacion=c["fecha_autorizacion"], activo=bool(c["activo"]), creado_en=c["creado_en"],
+        ambiente=c.get("ambiente"), en_uso=bool(c.get("en_uso")),
+        vence=vence.isoformat() if vence else None, vigente=not caf_vencido(c))
 
 
 class FolioDisponibleResponse(BaseModel):
@@ -167,22 +187,13 @@ def buscar_dte(
 def get_cafs(
     rut_emisor: Optional[str] = Query(None),
     tipo_dte: Optional[int] = Query(None),
+    ambiente: Optional[str] = Query(None, description="simulacion | certificacion | produccion (por defecto, todos)"),
     usuario: dict = Depends(requerir_autenticacion),
 ) -> list[CAFResponse]:
-    """Lista los CAFs registrados."""
-    cafs = listar_cafs(rut_emisor=rut_emisor, tipo_dte=tipo_dte)
+    """Lista los CAFs registrados, de todos los ambientes salvo que se pida uno."""
+    cafs = listar_cafs(rut_emisor=rut_emisor, tipo_dte=tipo_dte, ambiente=ambiente)
     return [
-        CAFResponse(
-            id=c["id"],
-            tipo_dte=c["tipo_dte"],
-            rut_emisor=c["rut_emisor"],
-            folio_desde=c["folio_desde"],
-            folio_hasta=c["folio_hasta"],
-            folio_siguiente=c["folio_siguiente"],
-            fecha_autorizacion=c["fecha_autorizacion"],
-            activo=bool(c["activo"]),
-            creado_en=c["creado_en"],
-        )
+        _caf(c)
         for c in cafs
     ]
 
@@ -201,17 +212,7 @@ def get_caf_activo(
     caf = obtener_caf_activo(rut_emisor, tipo_dte)
     if not caf:
         raise RecursoNoEncontrado("No hay CAF activo para estos parámetros")
-    return CAFResponse(
-        id=caf["id"],
-        tipo_dte=caf["tipo_dte"],
-        rut_emisor=caf["rut_emisor"],
-        folio_desde=caf["folio_desde"],
-        folio_hasta=caf["folio_hasta"],
-        folio_siguiente=caf["folio_siguiente"],
-        fecha_autorizacion=caf["fecha_autorizacion"],
-        activo=bool(caf["activo"]),
-        creado_en=caf["creado_en"],
-    )
+    return _caf(caf)
 
 
 @router.post(
@@ -222,6 +223,9 @@ def get_caf_activo(
 )
 def post_registrar_caf(
     archivo: UploadFile = File(..., description="Archivo CAF XML"),
+    ambiente: Optional[str] = Form(None, description="simulacion | certificacion | produccion. Por defecto, el "
+                                   "ambiente actual de la empresa. Sirve para cargar el CAF de producción "
+                                   "antes de cambiar de ambiente."),
     usuario: dict = Depends(requerir_autenticacion),
 ) -> CAFResponse:
     """Registra un nuevo CAF leyendo sus metadatos del XML."""
@@ -232,21 +236,29 @@ def post_registrar_caf(
 
     try:
         caf = ManejadorCAF(contenido)
-    except ValueError as e:
+    except (ValueError, SyntaxError) as e:   # SyntaxError: XML mal formado (lxml)
         raise CAFError(f"No se pudo parsear el CAF: {e}")
 
     d = caf.datos
 
-    # Desactivar cualquier CAF activo anterior del mismo tipo y emisor
-    # (El sistema requiere sólo un CAF activo por tipo y emisor)
-    try:
-        from core.database import ejecutar
-        ejecutar(
-            "UPDATE cafs SET activo=0 WHERE rut_emisor=? AND tipo_dte=?",
-            (d.rut_emisor, d.tipo_dte),
-        )
-    except Exception as e:
-        pass
+    # Los CAF anteriores del mismo tipo siguen activos: sus folios se usan hasta agotarse o
+    # vencer, y después el motor pasa solo a este (core/models.py::_elegir_caf).
+    ambiente = (ambiente or ambiente_actual()).strip().lower()
+    if ambiente not in AMBIENTES:
+        raise ValidacionError("`ambiente` debe ser simulacion, certificacion o produccion.",
+                              detalle={"ambiente": ambiente})
+    fecha = d.fecha_autorizacion.isoformat()
+    if caf_vencido({"ambiente": ambiente, "fecha_autorizacion": fecha}):
+        raise CAFError(f"El CAF venció el {vence_caf(fecha)} (6 meses desde su autorización, {fecha[:10]}): "
+                       "sus folios ya no se pueden usar. Pide folios nuevos al SII.",
+                       detalle={"fecha_autorizacion": fecha[:10], "vence": str(vence_caf(fecha))})
+
+    if obtenerUno("SELECT 1 FROM cafs WHERE rut_emisor=? AND tipo_dte=? AND folio_desde=? AND ambiente=?",
+                  (d.rut_emisor, d.tipo_dte, d.folio_desde, ambiente)):
+        raise ConflictoError(
+            f"Ya hay un CAF del tipo {d.tipo_dte} que parte en el folio {d.folio_desde} en {ambiente}: "
+            "no se carga dos veces.", codigo="caf_repetido",
+            detalle={"tipo_dte": d.tipo_dte, "folio_desde": d.folio_desde, "ambiente": ambiente})
 
     # Fallo al guardar → 500 vía el handler global (traza al log).
     caf_id = registrar_caf(
@@ -254,26 +266,17 @@ def post_registrar_caf(
         rut_emisor=d.rut_emisor,
         folio_desde=d.folio_desde,
         folio_hasta=d.folio_hasta,
-        fecha_autorizacion=d.fecha_autorizacion.isoformat(),
+        fecha_autorizacion=fecha,
         caf_xml=contenido.decode("utf-8", errors="ignore"),
+        ambiente=ambiente,
     )
+    return _caf(dict(obtenerUno("SELECT * FROM cafs WHERE id=?", (caf_id,))))
 
-    # Buscar el CAF recién registrado para retornar la respuesta
-    caf_registrado = obtener_caf_activo(d.rut_emisor, d.tipo_dte)
-    if not caf_registrado:
-        raise RuntimeError("CAF registrado pero no se pudo recuperar para la respuesta.")
 
-    return CAFResponse(
-        id=caf_registrado["id"],
-        tipo_dte=caf_registrado["tipo_dte"],
-        rut_emisor=caf_registrado["rut_emisor"],
-        folio_desde=caf_registrado["folio_desde"],
-        folio_hasta=caf_registrado["folio_hasta"],
-        folio_siguiente=caf_registrado["folio_siguiente"],
-        fecha_autorizacion=caf_registrado["fecha_autorizacion"],
-        activo=bool(caf_registrado["activo"]),
-        creado_en=caf_registrado["creado_en"],
-    )
+def put_usar_caf(caf_id: int, usuario: dict = Depends(requerir_administrador)) -> CAFResponse:
+    """Fija el CAF del que salen los folios de su tipo y ambiente. Sin esto, el motor usa el
+    vigente que vence primero y pasa solo al siguiente cuando se agota o vence."""
+    return _caf(usar_caf(caf_id))
 
 
 @router.get(

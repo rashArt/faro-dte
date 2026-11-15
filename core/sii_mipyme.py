@@ -1328,7 +1328,8 @@ def registrar_en_bd(res: ResultadoMipyme, rut_emisor: str, receptor: ReceptorMip
     from core.models import actualizar_estado_dte, crear_dte, obtener_dte_por_folio
     # RUT canónico del motor (sin puntos, con guión): así lo filtra `listar_dtes` y así aplica
     # el UNIQUE(rut_emisor, tipo_dte, folio). Idempotente: si ya existe, solo actualiza estado.
-    existente = obtener_dte_por_folio(formatear_rut(rut_emisor, con_puntos=False), res.tipo, res.folio)
+    existente = obtener_dte_por_folio(formatear_rut(rut_emisor, con_puntos=False), res.tipo, res.folio,
+                                      ambiente="produccion")
     if existente:
         actualizar_estado_dte(existente["id"], "emitido_mipyme", track_id=int(res.dhdr) if res.dhdr.isdigit() else None)
         return existente["id"]
@@ -1361,7 +1362,7 @@ def importar_emitidos(cli: ClienteMipyme, rut_emisor: str, docs: Sequence[Docume
             resumen["sin_tipo"] += 1
             logger.warning("MIPYME: tipo no reconocido en el historial: %r (folio %s)", d.tipo_texto, d.folio)
             continue
-        fila = obtener_dte_por_folio(rut, tipo, d.folio)
+        fila = obtener_dte_por_folio(rut, tipo, d.folio, ambiente="produccion")
         if fila:
             resumen["ya_existian"] += 1
             dte_id = fila["id"]

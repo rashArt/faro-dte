@@ -34,11 +34,15 @@ flowchart TB
 | Síntoma | Causa probable | Solución |
 |---|---|---|
 | `422 validacion` con "RUT … no es válido" | Dígito verificador incorrecto o formato con puntos | Enviar `12345678-5`, sin puntos |
-| `422 validacion` con "faltan datos del emisor" | La empresa no tiene completos sus datos | Completar con `PUT /api/v1/keystore/negocios/{id}`; los campos faltantes vienen en `detalle.faltan` |
-| `422 validacion` "varios negocios" | La instancia tiene más de una empresa | Agregar `rut_emisor` al `dte` |
+| `422 validacion` con "faltan datos del emisor" | La empresa no tiene completos sus datos | El administrador los completa con `PUT /api/v1/empresa`; los campos faltantes vienen en `detalle.faltan` |
+| `422 validacion` "No hay empresa para emitir" | La instancia todavía no tiene empresa, o `rut_emisor` no es el suyo | Crear la empresa (`PUT /api/v1/empresa`) o quitar `rut_emisor` |
 | `422 validacion` "esquema del SII (XSD)" | Un dato no cumple el formato del SII (largo, caracteres) | Revisar `detalle.errores` |
 | `422 validacion` en una nota | Falta `referencias` | Agregar la referencia al documento original |
-| `409 sin_folios` | Se acabaron los folios del tipo | Cargar un CAF nuevo (`POST /api/v1/caf`) |
+| `409 sin_folios` | `detalle.motivo` dice cuál: `agotado` (se acabaron), `vencido` (el CAF tiene más de 6 meses) o `sin_caf` (no hay CAF en este ambiente; los de certificación no sirven en producción) | Cargar un CAF nuevo del ambiente actual (`POST /api/v1/caf`) |
+| `409 requisitos_certificacion` | La empresa está en demo y el SII no muestra su RUT en certificación (o no respondió) | Inscribir la empresa en el ambiente de certificación del SII; si fue el SII, reintentar |
+| `403 autorizacion` al cambiar datos, certificado o ambiente | Se usó un token de integración | Lo hace el administrador con su usuario; ver [Autenticación](../empezar/autenticacion.md#que-hace-el-administrador) |
+| `409 requisitos_produccion` | Falta algo para pasar a producción | `detalle.falta` lo lista; ver [Pasar a producción](../guias/pasar-a-produccion.md) |
+| `409 empresa_unica` | Se intentó crear otra empresa en la instancia | Cada empresa tiene su propia instancia |
 | `409 ya_emitido` | El `id_externo` se reutilizó con otros datos | Ver [Idempotencia](../guias/idempotencia.md#ya_emitido-la-venta-cambio-despues-de-emitir) |
 | `409 en_curso` repetido por más de un minuto | Una emisión quedó a medias | Reintentar con el mismo `id_externo`; si persiste, avisar al administrador |
 | `422 certificado` | Certificado vencido o contraseña cambiada | Subir el certificado vigente y asociarlo a la empresa |

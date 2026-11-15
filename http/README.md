@@ -15,8 +15,8 @@ Alternativa a Swagger para probar la API de Faro sin salir de VS Code. Requiere 
 
 | Carpeta | Contenido |
 |---|---|
-| `api/` | **Todas** las operaciones de `/openapi.json` (85, en 15 archivos, uno por grupo). Las genera `tools/generar_http.py`: no se editan a mano. Los cuerpos traen solo los campos obligatorios con datos ficticios; los opcionales se listan en un comentario `# opcionales:`. |
-| `flujos/` | Recorridos escritos a mano, en orden. `01-practica.http`: empresa de práctica (emitir, ver, anular, reiniciar) sin SII ni certificado real. `02-cliente.http`: emitir como una integración, con el certificado del negocio e `id_externo` (reintento, 409, 422 sin gastar folio) y, desde la fase 5, emitir sin emisor, estado, envío a mano, BORRADOR y alertas. `03-tokens.http`: el token de un sistema (emite, ve solo lo suyo, 403 fuera de su rol), renovar sin perder el `id_externo`, revocar, auditoría y bloqueo de login. |
+| `api/` | **Todas** las operaciones de `/openapi.json` (91, en 16 archivos, uno por grupo). Las genera `tools/generar_http.py`: no se editan a mano. Los cuerpos traen solo los campos obligatorios con datos ficticios; los opcionales se listan en un comentario `# opcionales:`. |
+| `flujos/` | Recorridos escritos a mano, en orden. `01-practica.http`: empresa de práctica (emitir, ver, anular, reiniciar) sin SII ni certificado real. `02-cliente.http`: emitir como una integración, con el certificado del negocio e `id_externo` (reintento, 409, 422 sin gastar folio) y, desde la fase 5, emitir sin emisor, estado, envío a mano, BORRADOR y alertas. `03-tokens.http`: el token de un sistema (emite, ve solo lo suyo, 403 fuera de su rol), renovar sin perder el `id_externo`, revocar, auditoría y bloqueo de login. `04-ambientes.http`: la empresa de la instancia, folios y vencimiento de los CAF, cargar el CAF de producción antes del cambio y el cambio de ambiente con sus requisitos, desde el modo demo (fase 7). |
 
 Regenerar `api/` cuando cambie una ruta (con la instancia local arriba):
 
@@ -28,7 +28,8 @@ python tools/generar_http.py
 
 - Algunas operaciones **gastan folios o hablan con el SII** (`dte/emitir`, `dte/enviar`,
   `estado/*`, `onboarding/*`, `keystore/negocios/*/timbraje`, `mipyme/*`). En una instancia con
-  certificado y CAF reales, `SII_AMBIENTE` decide si va a certificación o a producción (L1 de
+  certificado y CAF reales, el ambiente de la empresa (`GET /api/v1/empresa`) decide si va a
+  certificación o a producción; en modo demo (`simulacion`) nada sale al SII (L1 de
   [`../docs/CONSTITUCION.md`](../docs/CONSTITUCION.md)).
 - Los archivos de ejemplo para subir (`< ../../tests/dorado/fixtures/...`) son el CAF y el
   certificado **ficticios** del corpus dorado. Sirven para practicar; el SII no los acepta.

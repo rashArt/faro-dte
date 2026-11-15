@@ -14,6 +14,8 @@ from datetime import date
 from typing import List, Optional
 
 from core import database
+from core.ambiente import SIMULACION, ambiente_actual, resolver
+from core.models import caf_vencido, vence_caf
 
 REGLA_MESES_CAF = 6  # CAF-3-517: (Firma_DTE − FA_CAF) no debe superar 6 meses.
 
@@ -22,8 +24,9 @@ def _meses(desde: date, hoy: date) -> int:
     return (hoy.year - desde.year) * 12 + (hoy.month - desde.month)
 
 
-def salud_caf(rut_emisor: str, hoy: Optional[date] = None) -> List[dict]:
-    """Salud de cada CAF activo del emisor. 100% local (lee la BD).
+def salud_caf(rut_emisor: str, hoy: Optional[date] = None, ambiente: Optional[str] = None) -> List[dict]:
+    """Salud de cada CAF activo del emisor en `ambiente` (por defecto, el actual). 100% local
+    (lee la BD).
 
     Cada item trae un ``estado``: ok | por_vencer | vencido | bajo | agotado, y un
     ``detalle`` legible con la acción sugerida.
@@ -34,9 +37,9 @@ def salud_caf(rut_emisor: str, hoy: Optional[date] = None) -> List[dict]:
     """
     hoy = hoy or date.today()
     filas = database.obtener_todos(
-        "SELECT tipo_dte, folio_desde, folio_hasta, folio_siguiente, fecha_autorizacion "
-        "FROM cafs WHERE rut_emisor=? AND activo=1 ORDER BY tipo_dte, folio_desde",
-        (rut_emisor,))
+        "SELECT id, tipo_dte, folio_desde, folio_hasta, folio_siguiente, fecha_autorizacion, ambiente, en_uso "
+        "FROM cafs WHERE rut_emisor=? AND ambiente=? AND activo=1 ORDER BY tipo_dte, folio_desde",
+        (rut_emisor, resolver(ambiente)))
     reporte: List[dict] = []
     for f in filas:
         d = dict(f)
@@ -45,24 +48,28 @@ def salud_caf(rut_emisor: str, hoy: Optional[date] = None) -> List[dict]:
         except Exception:
             fa = hoy
         meses = _meses(fa, hoy)
+        # La misma regla con que la emisión descarta un CAF (core/models.py): 6 meses exactos.
+        vence = vence_caf(d["fecha_autorizacion"])
+        vencido = caf_vencido(d, hoy)
+        dias = (vence - hoy).days if vence else None
         sig = d["folio_siguiente"] or d["folio_desde"]
         restantes = max(0, d["folio_hasta"] - sig + 1)
         total = d["folio_hasta"] - d["folio_desde"] + 1
         umbral_bajo = max(3, total // 10)
 
         # Prioridad: vencido > agotado > bajo > por_vencer > ok.
-        if meses >= REGLA_MESES_CAF:
+        if vencido:
             estado = "vencido"
-            detalle = (f"CAF de hace {meses} meses (máx {REGLA_MESES_CAF} por el SII). "
+            detalle = (f"CAF vencido el {vence} (máx {REGLA_MESES_CAF} meses por el SII). "
                        "No se puede usar; timbra folios nuevos.")
         elif restantes == 0:
             estado, detalle = "agotado", "Sin folios disponibles en este CAF."
         elif restantes <= umbral_bajo:
             estado = "bajo"
             detalle = f"Quedan {restantes} de {total} folios — pide más pronto."
-        elif meses >= REGLA_MESES_CAF - 1:
+        elif dias is not None and dias <= 30 and d["ambiente"] != SIMULACION:
             estado = "por_vencer"
-            detalle = f"Vence este mes (tiene {meses} meses). Usa estos folios ya."
+            detalle = f"Vence el {vence} (en {dias} días). Usa estos folios ya."
         else:
             estado, detalle = "ok", f"{restantes} de {total} folios disponibles."
 
@@ -74,15 +81,18 @@ def salud_caf(rut_emisor: str, hoy: Optional[date] = None) -> List[dict]:
             "total": total,
             "fecha_autorizacion": str(fa),
             "meses": meses,
+            "vence": str(vence) if vence else None,
+            "caf_id": d["id"],
+            "en_uso": bool(d["en_uso"]),
             "estado": estado,
             "detalle": detalle,
         })
     return reporte
 
 
-def resumen_salud(rut_emisor: str, hoy: Optional[date] = None) -> dict:
+def resumen_salud(rut_emisor: str, hoy: Optional[date] = None, ambiente: Optional[str] = None) -> dict:
     """Resumen accionable: conteo por estado + veredicto global (ok/atencion/critico)."""
-    cafs = salud_caf(rut_emisor, hoy)
+    cafs = salud_caf(rut_emisor, hoy, ambiente)
     por_estado = Counter(c["estado"] for c in cafs)
     critico = por_estado["vencido"] + por_estado["agotado"]
     atencion = por_estado["bajo"] + por_estado["por_vencer"]
@@ -101,7 +111,8 @@ def salud_cartera(ruts: Optional[List[str]] = None, hoy: Optional[date] = None) 
     con CAF cargado. Ordena por urgencia (crítico → atención → ok). 100% local."""
     if ruts is None:
         filas = database.obtener_todos(
-            "SELECT DISTINCT rut_emisor FROM cafs WHERE activo=1 ORDER BY rut_emisor")
+            "SELECT DISTINCT rut_emisor FROM cafs WHERE activo=1 AND ambiente=? ORDER BY rut_emisor",
+            (ambiente_actual(),))
         ruts = [dict(f)["rut_emisor"] for f in filas]
     empresas = [resumen_salud(r, hoy) for r in ruts]
     orden = {"critico": 0, "atencion": 1, "ok": 2}

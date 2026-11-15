@@ -41,6 +41,7 @@ from typing import Callable, Optional
 from zoneinfo import ZoneInfo
 
 from core import keystore, negocios
+from core.ambiente import ambiente_actual, usa_sii
 from core.config import settings
 from core.resolucion import resolucion_emisor
 from core.rvd import (dias_con_boletas, enviar_rvd, generar_rvd_firmado,
@@ -93,14 +94,15 @@ def procesar_dia(rut: str, cert_id: Optional[int], dia: date,
         cert = keystore.cargar_certificado(cert_id, cuenta_id)
         # Resolución POR-EMPRESA (el SII la valida por RUT; la de otra da CRT-3-19). El RVD
         # comparte la carátula del sobre de boletas de esa empresa. Ver core/resolucion.py.
-        fch_resol, nro_resol = resolucion_emisor(rut, settings.sii_ambiente)
+        ambiente = ambiente_actual()
+        fch_resol, nro_resol = resolucion_emisor(rut, ambiente)
         xml = generar_rvd_firmado(
             rut_emisor=rut,
             cert=cert,
             dia=dia,
             fecha_resolucion=fch_resol,
             numero_resolucion=nro_resol,
-            ambiente=settings.sii_ambiente,
+            ambiente=ambiente,
         )
     except Exception as e:  # noqa: BLE001 — se registra y se sigue con los demás días
         detalle = f"{type(e).__name__}: {e}"
@@ -113,7 +115,7 @@ def procesar_dia(rut: str, cert_id: Optional[int], dia: date,
 
     # Envío por el canal de FACTURAS (DTEUpload + token SOAP), no por el REST de boletas.
     try:
-        with ClienteSII(cert, AmbienteSII(settings.sii_ambiente)) as cliente:
+        with ClienteSII(cert, AmbienteSII(ambiente)) as cliente:
             track_id, _ = enviar_rvd(xml, rut, cliente)
     except Exception as e:  # noqa: BLE001 — el día queda 'generado' y se reintenta luego
         detalle = f"{type(e).__name__}: {e}"
@@ -123,7 +125,7 @@ def procesar_dia(rut: str, cert_id: Optional[int], dia: date,
                 "xml_path": str(ruta), "detalle": detalle}
 
     registrar_rvd(rut, dia, ESTADO_ENVIADO, track_id=str(track_id), xml_path=str(ruta),
-                  detalle=f"Enviado por DTEUpload ({settings.sii_ambiente}).")
+                  detalle=f"Enviado por DTEUpload ({ambiente}).")
     logger.info("RVD %s %s enviado → TrackID %s", rut, dia, track_id)
     return {"rut": rut, "dia": dia.isoformat(), "estado": ESTADO_ENVIADO,
             "track_id": str(track_id), "xml_path": str(ruta)}
@@ -136,6 +138,8 @@ def procesar_pendientes(cuenta_id: int = 1, dias_atras: int = 7,
     Hace *catch-up*: mira hacia atrás `dias_atras` días, así un servidor que estuvo apagado
     recupera los reportes que debe. No incluye el día de hoy: aún puede recibir boletas.
     """
+    if not usa_sii(ambiente_actual()):   # modo demo: no hay RVD que reportar al SII
+        return []
     hoy = hoy or hoy_chile()
     hasta = hoy - timedelta(days=1)
     desde = hoy - timedelta(days=dias_atras)
@@ -145,7 +149,7 @@ def procesar_pendientes(cuenta_id: int = 1, dias_atras: int = 7,
         rut = neg.get("rut")
         if not rut:
             continue
-        for dia in dias_con_boletas(rut, desde, hasta, ambiente=settings.sii_ambiente):
+        for dia in dias_con_boletas(rut, desde, hasta, ambiente=ambiente_actual()):
             resultados.append(procesar_dia(rut, neg.get("cert_id"), dia, cuenta_id))
     return resultados
 

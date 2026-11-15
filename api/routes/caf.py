@@ -119,6 +119,8 @@ router.add_api_route("", _db.get_cafs, methods=["GET"], response_model=list[_db.
                      summary="Listar CAF registrados")
 router.add_api_route("", _db.post_registrar_caf, methods=["POST"], response_model=_db.CAFResponse,
                      summary="Registrar un CAF subiendo el XML del SII")
+router.add_api_route("/{caf_id}/en-uso", _db.put_usar_caf, methods=["PUT"], response_model=_db.CAFResponse,
+                     summary="Fijar el CAF del que salen los folios (administrador)")
 router.add_api_route("/activo/{rut_emisor}/{tipo_dte}", _db.get_caf_activo, methods=["GET"],
                      response_model=_db.CAFResponse, summary="CAF activo de un emisor y tipo")
 router.add_api_route("/folios/siguiente/{rut_emisor}/{tipo_dte}", _db.get_siguiente_folio, methods=["GET"],

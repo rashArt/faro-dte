@@ -26,6 +26,7 @@ from urllib.parse import urlencode
 from fastapi import APIRouter, Form
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 
+from core.ambiente import ambiente_actual
 from core.database import obtenerUno
 
 router = APIRouter(prefix="/consulta", tags=["Consulta pública"])
@@ -42,9 +43,10 @@ def _buscar(rut: str, tipo: int, folio: int, monto: int, fecha: str | None):
     """Fila de la boleta si coinciden TODOS los datos (anti-enumeración), o None."""
     if tipo not in _TIPOS:
         return None
-    sql = ("SELECT * FROM dtes WHERE rut_emisor=? AND tipo_dte=? AND folio=? AND monto_total=? "
+    # Solo el ambiente actual: el mismo folio existe en certificación y en producción.
+    sql = ("SELECT * FROM dtes WHERE rut_emisor=? AND tipo_dte=? AND folio=? AND monto_total=? AND ambiente=? "
            "AND COALESCE(estado, '') NOT IN ('reservado', 'error')")   # sin timbre: no hay documento que mostrar
-    params: list = [_norm_rut(rut), tipo, folio, monto]
+    params: list = [_norm_rut(rut), tipo, folio, monto, ambiente_actual()]
     if fecha:
         sql += " AND fecha_emision=?"
         params.append(fecha.strip())

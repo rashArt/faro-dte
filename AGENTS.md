@@ -145,7 +145,12 @@ Despliegue por cliente (red interna, Postgres, migración explícita, `tools/res
 3. Ajustar lógica de IVA si es exento
 
 ### Cambiar ambiente SII
-Editar `.env`: `SII_AMBIENTE=produccion` (requiere certificación previa)
+Motor Python (fork, fase 7 de `docs/deploy/PLAN.md`): el ambiente es de la empresa y se cambia por
+la API, `PUT /api/v1/empresa/ambiente` (exige requisitos; `SII_AMBIENTE` es solo el valor inicial).
+Una empresa en `simulacion` (modo demo) nunca toca al SII: antes de hablarle, pregunta
+`core.ambiente.usa_sii(ambiente)`.
+Lee el ambiente con `core.ambiente.ambiente_actual()`, nunca con `settings.sii_ambiente`.
+Motores Go y Rust: editar `.env`, `SII_AMBIENTE=produccion` (requiere certificación previa).
 
 ### Resetear BD
 ```bash

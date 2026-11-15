@@ -25,6 +25,7 @@ from typing import List, Optional, Tuple
 import httpx
 
 from core import database, keystore
+from core.ambiente import ambiente_actual, usa_sii
 from core.caf import ManejadorCAF
 from core.config import settings
 from core.models import registrar_caf
@@ -54,7 +55,7 @@ def _tipos_gestionados() -> List[int]:
 
 
 def _base() -> str:
-    return BASE_PRODUCCION if settings.sii_ambiente == "produccion" else BASE_CERTIFICACION
+    return BASE_PRODUCCION if ambiente_actual() == "produccion" else BASE_CERTIFICACION
 
 
 def folios_disponibles(rut: str, tipo: int) -> int:
@@ -70,7 +71,8 @@ def _pares_gestionables() -> List[Tuple[str, int]]:
     with database.get_db() as conn:
         conn.execute(_SCHEMA)
         filas = conn.execute(
-            "SELECT DISTINCT rut_emisor, tipo_dte FROM cafs WHERE activo=1").fetchall()
+            "SELECT DISTINCT rut_emisor, tipo_dte FROM cafs WHERE activo=1 AND ambiente=?",
+            (ambiente_actual(),)).fetchall()
     return [(f[0], f[1]) for f in filas if f[1] in tipos]
 
 
@@ -168,12 +170,14 @@ def gestionar_folios(cuenta_id: int = 1) -> List[dict]:
     los eventos ocurridos (repuesto/bloqueado/error/omitido). El chequeo es LOCAL; solo pega al
     SII cuando efectivamente hay que reponer."""
     eventos: List[dict] = []
+    if not usa_sii(ambiente_actual()):   # modo demo: no se piden folios al SII
+        return eventos
     umbral, cantidad = settings.folios_auto_umbral, settings.folios_auto_cantidad
     for rut, tipo in _pares_gestionables():
         disp = folios_disponibles(rut, tipo)
         if disp > umbral:
             continue
-        clave = f"{rut}|{tipo}"
+        clave = f"{rut}|{tipo}|{ambiente_actual()}"
         if _en_cooldown(clave):
             logger.info("folios %s tipo %s bajo (%s) pero en cooldown; no repongo aún", rut, tipo, disp)
             continue

@@ -133,11 +133,22 @@ openssl rand -base64 18                               # ADMIN_PASSWORD
 | `COMPOSE_PROJECT_NAME` | `faro-acme`: prefijo de contenedores y volúmenes, y nombre de la API en la red (`http://faro-acme:8000`) |
 | `FARO_VERSION` | la versión que vas a construir, por ejemplo la etiqueta de git |
 | `FARO_FUENTE` | `/srv/faro-dte` |
-| `SII_AMBIENTE` | `certificacion` hasta terminar la certificación; después `produccion` (L1) |
 | `ENVIO_SII` | `activo`. Con `desactivado` se emite pero nada llega al SII |
 
-El compose no levanta si falta `COMPOSE_PROJECT_NAME`, `FARO_VERSION`, `POSTGRES_PASSWORD`,
-`SII_AMBIENTE` o `ENVIO_SII`: son decisiones explícitas de cada cliente.
+El compose no levanta si falta `COMPOSE_PROJECT_NAME`, `FARO_VERSION`, `POSTGRES_PASSWORD` o
+`ENVIO_SII`: son decisiones explícitas de cada cliente.
+
+**El `.env` lo leen dos programas.** Docker Compose lo usa para armar los contenedores (nombre
+del proyecto, versión de la imagen, carpeta del código, clave de PostgreSQL). Faro lo lee al
+arrancar para su configuración y sus secretos. La imagen no guarda nada de esto: es la misma
+para todos los clientes, y cambiar el `.env` pide recrear el contenedor (`docker compose up -d
+faro`), no reconstruir la imagen.
+
+**Lo que no va en el `.env`.** Los datos de la empresa, su certificado, sus folios y su
+**ambiente** (demo, certificación o producción) viven en la base y se cargan por la API (paso 6).
+Una empresa nueva nace en modo demo (`simulacion`: nada sale al SII ni se le consulta el RUT); el
+administrador la pasa a certificación, donde se valida el RUT en el SII, y después a producción,
+con `PUT /api/v1/empresa/ambiente`.
 
 Guarda `DTE_MASTER_KEY` también **fuera del servidor** (gestor de secretos). Cifra los
 certificados guardados; si se pierde, hay que volver a subirlos.
@@ -160,12 +171,14 @@ docker compose logs faro | grep -E "Ambiente SII|Base de datos|SEGURIDAD|Envío"
 docker run --rm --network integraciones curlimages/curl -s http://faro-acme:8000/health
 ```
 
-`Base de datos` tiene que decir `postgresql+psycopg://faro:***@db:5432/faro`. Con
-`SII_AMBIENTE=produccion` el motor **no arranca** si queda algún aviso `SEGURIDAD`.
+`Base de datos` tiene que decir `postgresql+psycopg://faro:***@db:5432/faro`. Con la empresa en
+producción el motor **no arranca** si queda algún aviso `SEGURIDAD` (y con avisos, la API no
+deja pasarla a producción).
 
-**6. Alta del cliente y API key.** Sigue [`INTEGRACION.md`](INTEGRACION.md) o el
-[manual](../../manual/docs/guias/configurar-empresa.md): certificado, negocio, datos del emisor,
-folios y un token para cada integración. Sin puertos publicados, esas llamadas se hacen desde la
+**6. Alta del cliente y API key.** Sigue [`INTEGRACION.md`](INTEGRACION.md#alta-de-un-cliente-una-vez)
+o el [manual](../../manual/docs/guias/configurar-empresa.md): la empresa y sus datos
+(`PUT /api/v1/empresa`), su certificado (`PUT /api/v1/empresa/certificado`), los CAF de
+certificación (`POST /api/v1/caf`) y un token para cada integración. Sin puertos publicados, esas llamadas se hacen desde la
 red `integraciones` (o con un túnel SSH a un contenedor de esa red).
 
 **7. Primer respaldo.** `/srv/faro-dte/tools/respaldo.sh respaldar` (ver [Respaldos](#respaldos)).
@@ -262,9 +275,17 @@ esos folios ya están timbrados, no se reemiten.
   `docker compose run --rm --no-deps --user 0 -v ./.env:/app/.env faro python rotar_claves.py`,
   revisa el `.env` y `docker compose up -d --force-recreate faro`. *No verificado todavía con
   PostgreSQL.*
-- **Ambiente.** `SII_AMBIENTE=certificacion` hasta terminar la certificación del cliente
-  ([`../CERTIFICACION.md`](../CERTIFICACION.md)). Después cambia a `produccion` (L1) y recrea
-  Faro (`docker compose up -d faro`).
+- **Ambiente.** Es de la empresa, no del `.env`. Nace en modo demo; el administrador la pasa a
+  certificación (se valida el RUT en el SII) y, terminada la certificación del cliente
+  ([`../CERTIFICACION.md`](../CERTIFICACION.md)), a producción, por la API, en la misma instancia
+  y sin reiniciar nada ([`INTEGRACION.md`](INTEGRACION.md#pasar-a-producción), L1). Los CAF y
+  documentos de cada ambiente quedan separados. `SII_AMBIENTE` solo fija el ambiente con que nace
+  una empresa nueva (por defecto `simulacion`).
+- **Quién configura.** Los datos de la empresa, su certificado y su ambiente los cambia solo el
+  administrador (usuario con login). Un token de integración los lee y carga CAF.
+- **Folios.** `GET /api/v1/empresa/folios` muestra lo disponible por tipo y cuándo vence cada CAF
+  (6 meses desde su autorización). Carga el CAF siguiente antes de que se acabe o venza el que
+  está en uso: Faro pasa solo al siguiente.
 - **Administrar la base.** No publica puertos. Para DBeaver o pgAdmin, un túnel SSH al
   contenedor `db` ([`POSTGRESQL.md`](POSTGRESQL.md)), o `docker compose exec db psql -U faro faro`.
 

@@ -38,7 +38,7 @@ classDiagram
 | `fecha_vencimiento` | fecha | no | Para ventas a crédito |
 | `observaciones` | texto (1000) | no | Texto libre impreso en el documento |
 | `indicador_servicio` | entero | no | `1` a `3`, para boletas de servicios periódicos |
-| `rut_emisor` | texto | no | Qué empresa emite, si la instancia tiene varias |
+| `rut_emisor` | texto | no | No hace falta: la instancia tiene una sola empresa. Si lo mandas, tiene que ser su RUT |
 | `emisor` | objeto | no | Datos del emisor. Si no lo mandas, se usan los configurados |
 | `folio` | entero | no | No lo mandes: Faro asigna el siguiente |
 

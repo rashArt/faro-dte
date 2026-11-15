@@ -1,6 +1,6 @@
 # Plan del fork: Faro como API de facturación para integraciones
 
-> **Estado (2026-11-10):** fases 0 a 6 hechas; lo demás, pendiente salvo lo marcado ✅. Rama de
+> **Estado (2026-11-14):** fases 0 a 7 hechas; lo demás, pendiente salvo lo marcado ✅. Rama de
 > trabajo: `servidor-produccion`. Los hallazgos están **verificados en vivo** contra la imagen
 > Docker del motor Python (`tools/sondeo_integridad.py`).
 >
@@ -314,7 +314,7 @@ probados. No cambia la API ni la base. Guía: [`README.md`](README.md).
 - ✅ **`docker-compose.prod.yml`:** `db` (PostgreSQL 17) → `migrar` (`alembic upgrade head`, una
   vez) → `faro`. Sin puertos publicados; la base en una red interna sin salida; Faro en la red
   externa `integraciones` con el nombre del proyecto (`faro-acme`). Exige `COMPOSE_PROJECT_NAME`,
-  `FARO_VERSION`, `POSTGRES_PASSWORD`, `SII_AMBIENTE` y `ENVIO_SII`. Logs rotados y límite de
+  `FARO_VERSION`, `POSTGRES_PASSWORD` y `ENVIO_SII` (`SII_AMBIENTE` dejó de exigirse en la fase 7). Logs rotados y límite de
   memoria de 1 GiB por contenedor.
 - ✅ **`docker-compose.dev.yml`** (antes `docker-compose.example.yml`): SQLite en localhost,
   PostgreSQL comentado y el manual de la API como perfil. Se borró `docker-compose.postgres.example.yml`.
@@ -328,6 +328,63 @@ probados. No cambia la API ni la base. Guía: [`README.md`](README.md).
   suite 83 + 7 omitidas; `test_dorado` 15/15 dentro de la imagen.
 - Pendiente fuera del código: el primer VPS real y, en él, el despacho contra el SII de
   certificación (fase 5).
+
+### Fase 7 — Una empresa, su ambiente y folios confiables ✅ (2026-11-14)
+El ambiente (certificación o producción) deja de ser del `.env` y pasa a ser de la empresa, en la
+misma instancia; los CAF dejan de mezclarse y de usarse vencidos. Migración `0005`.
+
+- **Por qué:** certificación y producción son ambientes separados del SII: cada uno entrega sus
+  CAF y numera por su cuenta (manual de certificación del SII; FAQ 001.003.6524). Hasta la fase 6
+  los CAF no tenían ambiente y `dtes` exigía `(rut_emisor, tipo_dte, folio)` único: pasar a
+  producción en la misma base usaba los CAF de certificación y chocaba en el folio 1.
+- **Decidido (2026-11-14):** una instancia, **una empresa** (otra se rechaza); el ambiente es de la
+  empresa y se cambia por la API, con requisitos bloqueantes; `SII_AMBIENTE` queda como valor
+  inicial; la empresa puede nacer en **modo demo** (`simulacion`) sin validar el RUT, que se
+  valida en el SII al pasar a certificación o producción; datos, certificado y ambiente los
+  cambia solo el administrador; `ambiente` es llave foránea por código a la tabla `ambientes`, sin `negocio_id`; el CAF
+  lo elige el motor y el administrador puede fijarlo; vigencia de 6 meses para **todos** los
+  tipos; las rutas `keystore/negocios/*` quedan, sin documentar, para la interfaz heredada.
+- ✅ **Migración `0005`:** tabla `ambientes` (`certificacion`, `produccion`, `simulacion`);
+  `ambiente` NOT NULL con llave foránea en `dtes`, `cafs`, `emisiones`, `rvd_envios`, `negocios` y
+  `resolucion_cache`; los únicos de `dtes`, `cafs`, `emisiones` y `rvd_envios` incluyen el
+  ambiente; `cafs.en_uso`; `folios_gestion.clave` = `rut|tipo|ambiente`. En SQLite cada tabla se
+  crea de nuevo (no admite agregar llaves con ALTER).
+- ✅ **`core/ambiente.py`:** `ambiente_actual()` es el único lugar que decide el ambiente: el de la
+  empresa, o `SII_AMBIENTE` mientras no hay empresa. Emisión, resolución, RVD, reposición de
+  folios y búsquedas por folio lo usan; el **envío y la consulta usan el ambiente del documento**.
+- ✅ **`/api/v1/empresa`** (`core/empresa.py`, `api/routes/empresa.py`): `GET` (datos, ambiente,
+  certificado, qué falta para producción), `PUT` (crear o actualizar), `PUT /certificado`,
+  `PUT /ambiente`, `GET /folios`. Leer: cualquier credencial; cambiar: administrador.
+- ✅ **Cambio de ambiente:** pide repetir el RUT; a producción exige datos completos, certificado
+  vigente, CAF de producción vigente, `.env` sin avisos de seguridad y que el SII muestre a la
+  empresa autorizada (si el SII no responde, no se cambia). Queda en `audit_log`
+  (`cambio_ambiente`). Volver a certificación no pide requisitos.
+- ✅ **Modo demo:** una empresa en `simulacion` emite con el mismo motor y nunca toca al SII
+  (`core.ambiente.usa_sii`): se crea con un RUT bien formado, la resolución es local, el envío
+  responde `simulacion` (`409 ambiente_sin_sii` a mano), y el RVD y la reposición de folios no
+  corren. Salir a certificación valida el RUT en el registro del SII (409
+  `requisitos_certificacion`, código `rut_sii`) y completa la razón social si falta. Volver a
+  demo no pide nada. `docker-compose.prod.yml` y los `.env` de ejemplo nacen en `simulacion`.
+- ✅ **CAF** (`core/models.py`): cargar un CAF ya no apaga los anteriores; los folios salen del
+  CAF en uso y, al agotarse o vencer, del vigente que vence primero; `PUT /api/v1/caf/{id}/en-uso`
+  lo fija; un CAF vencido no se usa ni se carga; `sin_folios` dice el motivo (`sin_caf`,
+  `vencido`, `agotado`). `POST /api/v1/caf` acepta `ambiente`; el mismo CAF dos veces en un
+  ambiente responde 409 `caf_repetido`.
+- ✅ **Arranque:** se niega con configuración insegura si la **empresa** está en producción.
+  `docker-compose.prod.yml` ya no exige `SII_AMBIENTE`. Los `.env` de ejemplo ya no traen
+  `EMPRESA_*`, `CERTIFICADO_*` ni la resolución (el código los sigue leyendo como respaldo).
+- ✅ `POST /api/v1/dte/enviar` (sobre crudo) rechaza un `ambiente` distinto al de la empresa.
+- ✅ Verificación: suite 104 + 7 omitidas en SQLite y 105 + 6 en PostgreSQL desechable
+  (`tests/api/test_ambientes.py`, `tests/unit/test_esquema.py`); subida desde `0004` con datos,
+  bajada y subida de nuevo en PostgreSQL.
+- **Distinto de Go y Rust a propósito:** no tienen `0005` ni `/empresa`; `tools/contrato_api.py`
+  va a diferir en `POST /caf` (no apaga los CAF anteriores, campos nuevos) y en
+  `keystore/negocios` (no cambia el ambiente, rechaza otra empresa).
+- **Por verificar contra el SII:** si la vigencia de 6 meses aplica a boletas (la Res. Ex. 58/2017
+  habla de documentos con derecho a crédito fiscal; aquí se aplica a todos por prudencia) y que
+  el ambiente de certificación sigue disponible después de la autorización en producción.
+- Pendiente fuera del código: lo mismo de las fases 5 y 6 (primer VPS y despacho contra el SII de
+  certificación con CAF y certificado reales).
 
 ## Política de folios
 

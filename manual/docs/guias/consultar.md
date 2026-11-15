@@ -10,7 +10,7 @@ ajeno, recibe `404`.
 | Descargar el PDF | `GET /api/v1/dte/documentos/{dte_id}/pdf` |
 | Descargar el XML firmado | `GET /api/v1/dte/documentos/{dte_id}/xml` |
 | Ver el estado ante el SII | `GET /api/v1/dte/{dte_id}/estado` (ver [Seguir el veredicto](seguir-veredicto.md)) |
-| Folios restantes | `GET /api/v1/caf/folios/siguiente/{rut}/{tipo}` |
+| Folios restantes | `GET /api/v1/empresa/folios` |
 
 ## Un documento
 
@@ -66,13 +66,17 @@ curl -s "$FARO_URL/api/v1/dte/documentos/81/xml" -H "Authorization: Bearer $FARO
 ## Folios restantes
 
 ```bash
-curl -s "$FARO_URL/api/v1/caf/folios/siguiente/77777777-7/33" -H "Authorization: Bearer $FARO_TOKEN"
+curl -s "$FARO_URL/api/v1/empresa/folios" -H "Authorization: Bearer $FARO_TOKEN"
 ```
 
 ```json
-{"rut_emisor": "77777777-7", "tipo_dte": 33, "folio_disponible": 1043,
- "folio_desde": 1001, "folio_hasta": 1100, "mensaje": "..."}
+{"rut": "77777777-7", "ambiente": "produccion", "estado": "ok",
+ "tipos": [{"tipo_dte": 33, "disponibles": 58,
+            "cafs": [{"caf_id": 4, "rango": [1001, 1100], "folio_siguiente": 1043, "restantes": 58,
+                      "en_uso": true, "fecha_autorizacion": "2026-10-04", "vence": "2027-04-04",
+                      "estado": "ok", "detalle": "58 de 100 folios disponibles."}]}]}
 ```
 
-Quedan `folio_hasta - folio_disponible + 1` folios en el CAF activo (58 en el ejemplo). Cuando se
-acaban, emitir responde `409 sin_folios` hasta que se cargue un CAF nuevo.
+`disponibles` suma los folios de todos los CAF vigentes del tipo. `estado` de cada CAF es `ok`,
+`bajo`, `por_vencer` (menos de 30 días), `agotado` o `vencido` (más de 6 meses: ya no se usa).
+Cuando no queda ninguno, emitir responde `409 sin_folios` hasta que se cargue un CAF nuevo.

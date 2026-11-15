@@ -1,0 +1,92 @@
+# Flujo 4 — Ambientes, cambio a producción y varios CAF (fase 7 de docs/deploy/PLAN.md).
+#
+# Antes: el flujo 2 hasta el paso 4 (CAF, empresa y certificado ficticios, en modo demo). Con la
+# empresa ficticia, salir de demo SIEMPRE responde 409: el SII no conoce su RUT. Es lo esperado:
+# nada ficticio llega al SII (L1, L14). Todos los PUT de este flujo son solo del administrador.
+
+@clave = {{$dotenv FARO_CLAVE}}
+@base = http://127.0.0.1:8000
+@usuario = admin
+
+### 1. Login de administrador
+# @name login
+POST {{base}}/api/v1/auth/login
+Content-Type: application/json
+
+{"username": "{{usuario}}", "password": "{{clave}}"}
+
+###
+@token = {{login.response.body.access_token}}
+
+### 2. La empresa → "ambiente": "simulacion" (modo demo); produccion.falta lista lo pendiente
+GET {{base}}/api/v1/empresa
+Authorization: Bearer {{token}}
+
+### 3. Folios por tipo en el ambiente actual: disponibles, CAF en uso y vencimiento (6 meses)
+GET {{base}}/api/v1/empresa/folios
+Authorization: Bearer {{token}}
+
+### 4. Cargar el mismo CAF ficticio como CAF de PRODUCCIÓN → 200; el de certificación no se toca
+POST {{base}}/api/v1/caf
+Authorization: Bearer {{token}}
+Content-Type: multipart/form-data; boundary=FaroLimite
+
+--FaroLimite
+Content-Disposition: form-data; name="archivo"; filename="caf_33.xml"
+Content-Type: application/octet-stream
+
+< ../../tests/dorado/fixtures/caf_33.xml
+--FaroLimite
+Content-Disposition: form-data; name="ambiente"
+
+produccion
+--FaroLimite--
+
+### 5. Los CAF de todos los ambientes: cada uno con su ambiente, en_uso, vence y vigente
+GET {{base}}/api/v1/caf
+Authorization: Bearer {{token}}
+
+### 6. Folios de producción (cargados antes del cambio)
+GET {{base}}/api/v1/empresa/folios?ambiente=produccion
+Authorization: Bearer {{token}}
+
+### 7. Confirmación equivocada → 422; el ambiente no cambia
+PUT {{base}}/api/v1/empresa/ambiente
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"ambiente": "produccion", "confirmar_rut": "76111111-6"}
+
+### 8. Pasar a producción → 409 "requisitos_produccion"; detalle.falta dice por qué
+#    (con la empresa ficticia: "autorizacion_sii"; con CORS abierto, también "seguridad")
+PUT {{base}}/api/v1/empresa/ambiente
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"ambiente": "produccion", "confirmar_rut": "77777777-7"}
+
+### 9. Fijar a mano el CAF en uso (pon el id de un CAF del paso 5) → 200, "en_uso": true
+PUT {{base}}/api/v1/caf/1/en-uso
+Authorization: Bearer {{token}}
+
+### 10. Otra empresa en la misma instancia → 409 "empresa_unica"
+PUT {{base}}/api/v1/empresa
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"rut": "76111111-6"}
+
+### 11. Salir de demo a certificación → 409 "requisitos_certificacion" (falta "rut_sii")
+#     Aquí se valida el RUT: consulta el registro público del SII de certificación (solo lectura).
+PUT {{base}}/api/v1/empresa/ambiente
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"ambiente": "certificacion", "confirmar_rut": "77777777-7"}
+
+### 12. Volver a demo (o quedarse): no pide requisitos → 200
+PUT {{base}}/api/v1/empresa/ambiente
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"ambiente": "simulacion", "confirmar_rut": "77777777-7"}

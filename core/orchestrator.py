@@ -17,6 +17,7 @@ from typing import Optional, Tuple
 from lxml import etree
 
 from core.caf import ManejadorCAF
+from core.ambiente import resolver
 from core.config import settings
 from core.crypto import CertificadoDigital, firmar_xml_sii
 from core.errors import (
@@ -79,7 +80,7 @@ class OrquestadorDTE:
                 activo; la simulación guarda "simulacion".
         """
         self.storage_base = Path(storage_base) if storage_base else Path(settings.storage_path)
-        self.ambiente = ambiente or settings.sii_ambiente
+        self.ambiente = resolver(ambiente)
         self.asegurar_directorios()
 
     def asegurar_directorios(self) -> None:
@@ -150,7 +151,7 @@ class OrquestadorDTE:
 
         auto_folio = False
         if dte_input.folio <= 0:
-            folio = consumir_siguiente_folio(rut_emisor, tipo_dte)
+            folio = consumir_siguiente_folio(rut_emisor, tipo_dte, self.ambiente)
             if folio is None:
                 raise SinFoliosError(
                     f"No hay folios disponibles para el emisor {rut_emisor} "
@@ -174,7 +175,7 @@ class OrquestadorDTE:
 
         # 4. Consumir el folio en base de datos (solo para folio explícito)
         if not auto_folio:
-            exito_consumo = consumir_folio(rut_emisor, tipo_dte, dte_input.folio)
+            exito_consumo = consumir_folio(rut_emisor, tipo_dte, dte_input.folio, self.ambiente)
             if not exito_consumo:
                 raise ConflictoError(
                     f"No se pudo consumir el folio {dte_input.folio} en la base de datos "
@@ -187,7 +188,7 @@ class OrquestadorDTE:
     @staticmethod
     def _caf_activo(rut_emisor: str, tipo_dte: int) -> ManejadorCAF:
         """El CAF activo del emisor y tipo, o `FolioError` si no hay."""
-        caf_db = obtener_caf_activo(rut_emisor, tipo_dte)
+        caf_db = obtener_caf_activo(rut_emisor, tipo_dte, self.ambiente)
         if not caf_db:
             raise FolioError(
                 f"No se encontró un CAF activo en la base de datos para el emisor "

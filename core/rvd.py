@@ -39,6 +39,7 @@ from typing import TYPE_CHECKING, Iterable, Optional, Sequence
 from lxml import etree
 
 from core.crypto import CertificadoDigital, firmar_xml_sii
+from core.ambiente import resolver
 from core.database import get_db
 from core.dte import SII_NAMESPACE
 from core.errors import ValidacionError
@@ -123,36 +124,37 @@ def dias_con_boletas(rut_emisor: str, desde: date, hasta: date,
         return [date.fromisoformat(r[0]) for r in conn.execute(sql, params)]
 
 
-def rvd_registrado(rut_emisor: str, dia: date) -> Optional[dict]:
-    """Devuelve el último registro de RVD de ese día, o None si nunca se generó."""
+def rvd_registrado(rut_emisor: str, dia: date, ambiente: Optional[str] = None) -> Optional[dict]:
+    """Devuelve el último registro de RVD de ese día en `ambiente` (por defecto, el actual), o
+    None si nunca se generó."""
     with get_db() as conn:
         fila = conn.execute(
-            "SELECT * FROM rvd_envios WHERE rut_emisor = ? AND fecha = ? "
+            "SELECT * FROM rvd_envios WHERE rut_emisor = ? AND fecha = ? AND ambiente = ? "
             "ORDER BY sec_envio DESC LIMIT 1",
-            (rut_emisor, dia.isoformat()),
+            (rut_emisor, dia.isoformat(), resolver(ambiente)),
         ).fetchone()
     return dict(fila) if fila else None
 
 
 def registrar_rvd(rut_emisor: str, dia: date, estado: str, sec_envio: int = 1,
                   track_id: Optional[str] = None, xml_path: Optional[str] = None,
-                  detalle: Optional[str] = None) -> int:
-    """Registra (o actualiza) el RVD de un día.
+                  detalle: Optional[str] = None, ambiente: Optional[str] = None) -> int:
+    """Registra (o actualiza) el RVD de un día en `ambiente` (por defecto, el actual).
 
-    El UNIQUE(rut_emisor, fecha, sec_envio) es lo que hace idempotente al programador:
+    El UNIQUE(rut_emisor, fecha, sec_envio, ambiente) es lo que hace idempotente al programador:
     reintentar el mismo día actualiza la fila en vez de duplicar el reporte.
     """
     ahora = datetime.now().isoformat(timespec="seconds")
     with get_db() as conn:
         cur = conn.execute(
             "INSERT INTO rvd_envios (rut_emisor, fecha, sec_envio, estado, track_id, "
-            "xml_path, detalle, creado_en, actualizado_en) VALUES (?,?,?,?,?,?,?,?,?) "
-            "ON CONFLICT(rut_emisor, fecha, sec_envio) DO UPDATE SET "
+            "xml_path, detalle, creado_en, actualizado_en, ambiente) VALUES (?,?,?,?,?,?,?,?,?,?) "
+            "ON CONFLICT(rut_emisor, fecha, sec_envio, ambiente) DO UPDATE SET "
             "estado=excluded.estado, track_id=excluded.track_id, "
             "xml_path=excluded.xml_path, detalle=excluded.detalle, "
             "actualizado_en=excluded.actualizado_en",
             (rut_emisor, dia.isoformat(), sec_envio, estado, track_id, xml_path,
-             detalle, ahora, ahora),
+             detalle, ahora, ahora, resolver(ambiente)),
         )
         return cur.lastrowid or 0
 

@@ -16,6 +16,7 @@ from api.util import leer_upload_sincrono
 from pydantic import BaseModel, Field
 
 from core import keystore, negocios
+from core.ambiente import ambiente_actual
 from core.auth import requerir_autenticacion, requerir_clave_app
 from core.errors import CertificadoError, RecursoNoEncontrado, SIIError, ValidacionError
 
@@ -227,7 +228,7 @@ def contexto_emision(
     neg = _negocio_o_404(usuario["id"], negocio_id)
     p12, pwd = keystore._descifrar(neg["cert_id"], usuario["id"])
     cert_pem, key_pem = keystore._p12_a_pem(p12, pwd)
-    ambiente = neg.get("ambiente") or settings.sii_ambiente
+    ambiente = neg.get("ambiente") or ambiente_actual()
     fecha, numero = resolucion_emisor(neg["rut"], ambiente)
     return {
         "negocio_id": neg["id"], "rut": neg["rut"], "razon_social": neg.get("razon_social"),

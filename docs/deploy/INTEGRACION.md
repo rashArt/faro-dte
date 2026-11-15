@@ -39,8 +39,8 @@ por despliegue):
 
 | Rol | Credencial | Qué hace |
 |---|---|---|
-| **administrador** | JWT: `POST /api/v1/auth/login` `{"username","password"}`; dura `JWT_ACCESS_TOKEN_EXPIRE_MINUTES` (60) | todo: usuarios, tokens, auditoría, alertas, alta del cliente |
-| **integracion** | token `dte_…`: lo crea el administrador con `POST /api/v1/apikeys` `{"nombre": "punto-de-venta"}` y se muestra **una sola vez** | emitir, enviar, consultar; gestionar certificados, negocios, CAF y folios de la empresa. Recibe 403 en usuarios, tokens, auditoría, alertas y el listado general de documentos |
+| **administrador** | JWT: `POST /api/v1/auth/login` `{"username","password"}`; dura `JWT_ACCESS_TOKEN_EXPIRE_MINUTES` (60) | todo: alta del cliente (datos de la empresa, certificado, ambiente), tokens, auditoría, alertas |
+| **integracion** | token `dte_…`: lo crea el administrador con `POST /api/v1/apikeys` `{"nombre": "punto-de-venta"}` y se muestra **una sola vez** | emitir, enviar, consultar; ver la empresa y sus folios; cargar CAF. Recibe 403 al cambiar los datos de la empresa, su certificado o su ambiente, al fijar el CAF en uso, y en usuarios, tokens, auditoría, alertas y el listado general de documentos |
 
 **Tu sistema usa un token**, no el JWT: no vence y no depende de una contraseña. Uno por
 integración, así la auditoría (`GET /api/v1/auditoria`, administrador) dice cuál hizo qué.
@@ -62,18 +62,57 @@ curl -s http://faro-acme:8000/api/v1/auth/me -H "Authorization: Bearer $TOKEN"
 
 ## Alta de un cliente (una vez)
 
-La hace el administrador (o una herramienta interna con su JWT). El orden es el de
-[`../PLATAFORMA.md`](../PLATAFORMA.md) §2:
+La hace el administrador (o una herramienta interna con su JWT): los pasos 1, 2, 5 y 6 responden
+403 a un token de integración. Una instancia atiende a **una sola empresa**, así que las rutas no
+llevan id ni RUT (fase 7 de [`PLAN.md`](PLAN.md)):
 
 | Paso | Llamada | Notas |
 |---|---|---|
-| 1. Certificado | `POST /api/v1/keystore/certificados` (multipart: `archivo`, `password`, `nombre`) | Se valida y se guarda **cifrado** (L6). Devuelve `id` = `cert_id`. Tu sistema nunca vuelve a manejar el `.pfx`. |
-| 2. Negocio | `POST /api/v1/keystore/negocios` (form: `rut`, `cert_id`, `ambiente`) | Completa la razón social desde el SII. |
-| 3. Datos del emisor | `PUT /api/v1/keystore/negocios/{id}` (`giro`, `codigo_actividad`, `direccion`, `comuna`, `ciudad`) | Con ellos, emitir no necesita `emisor`. |
-| 4. Diagnóstico | `GET /api/v1/onboarding/diagnostico?rut=…&cert_id=…` | Si está autorizado, qué tipos puede emitir y qué falta. |
-| 5. Certificación | [`../CERTIFICACION.md`](../CERTIFICACION.md) | Solo si el cliente no está habilitado como emisor con software propio. Tiene pasos humanos. |
-| 6. Folios | `POST /api/v1/caf` (subir el CAF) | Después se reponen solos (`FOLIOS_AUTO_*`), con los guardarraíles anti-acaparamiento (L7). |
-| 7. Token | `POST /api/v1/apikeys` | Uno por integración. |
+| 1. Empresa | `PUT /api/v1/empresa` (`rut`, `razon_social`, `giro`, `codigo_actividad`, `direccion`, `comuna`, `ciudad`) | Nace en **modo demo** (`simulacion`): no se consulta al SII, basta un RUT bien formado. Otro RUT responde 409 `empresa_unica`. |
+| 2. Certificado | `PUT /api/v1/empresa/certificado` (multipart: `archivo`, `password`, `nombre`) | Se valida y se guarda **cifrado** (L6). Tu sistema nunca vuelve a manejar el `.pfx`. |
+| 3. Folios | `POST /api/v1/caf` (el CAF del ambiente actual; `ambiente` para cargar el de otro) | Fuera de demo se reponen solos (`FOLIOS_AUTO_*`), con los guardarraíles anti-acaparamiento (L7). |
+| 4. Token | `POST /api/v1/apikeys` | Uno por integración. |
+| 5. Certificación | `PUT /api/v1/empresa/ambiente` con `"ambiente": "certificacion"`; después [`../CERTIFICACION.md`](../CERTIFICACION.md) | **Aquí se valida el RUT en el SII**: si no lo conoce, 409 `requisitos_certificacion`. La certificación del SII tiene pasos humanos y solo hace falta si el cliente no está habilitado como emisor con software propio. |
+| 6. Producción | `POST /api/v1/caf` con `ambiente=produccion` y `PUT /api/v1/empresa/ambiente` | Ver [Pasar a producción](#pasar-a-producción). |
+
+`GET /api/v1/empresa` muestra los datos, el ambiente, el certificado y lo que falta para pasar a
+producción. En demo nada sale al SII ni se le consulta nada (ni el RUT, ni la resolución, ni
+folios): sirve para aprender la API con datos ficticios. Quien instala puede hacer que la empresa
+nazca directo en certificación con `SII_AMBIENTE=certificacion`; entonces el RUT se valida al
+crearla. Las rutas antiguas `/api/v1/keystore/negocios/*` siguen existiendo para la interfaz
+heredada; no las uses en una integración nueva.
+
+### Pasar a producción
+
+Certificación y producción son ambientes separados del SII: cada uno entrega sus CAF y numera
+por su cuenta. En Faro el ambiente es **de la empresa** y se cambia en la misma instancia:
+
+```bash
+# 1. El CAF de producción se carga antes, sin afectar lo que se emite hoy.
+curl -s -X POST http://faro-acme:8000/api/v1/caf -H "Authorization: Bearer $ADMIN" \
+  -F archivo=@CAF_33_produccion.xml -F ambiente=produccion
+# 2. El cambio. `confirmar_rut` repite el RUT de la empresa.
+curl -s -X PUT http://faro-acme:8000/api/v1/empresa/ambiente -H "Authorization: Bearer $ADMIN" \
+  -H 'Content-Type: application/json' -d '{"ambiente": "produccion", "confirmar_rut": "76111111-6"}'
+```
+
+- Se rechaza con 409 `requisitos_produccion` (y la lista en `detalle.falta`) si faltan datos de
+  la empresa, un certificado vigente, un CAF de producción vigente, secretos seguros en el
+  `.env`, o si el SII no muestra a la empresa autorizada en producción.
+- Cada CAF, documento, `id_externo` y RVD guarda el ambiente en que nació: el folio 1 y el
+  `pedido-1` de las pruebas no chocan con los reales. Un documento de certificación pendiente
+  se sigue consultando en el SII de pruebas.
+- Volver a certificación o a demo es la misma llamada y no pide requisitos.
+- El cambio queda en la auditoría (`cambio_ambiente`, con quién y de qué ambiente a cuál).
+
+### Varios CAF y vencimiento
+
+Se puede cargar un CAF nuevo antes de que se acabe el anterior: no lo apaga. Los folios salen
+del CAF **en uso** (el vigente que vence primero) y, cuando se agota o vence, Faro pasa solo al
+siguiente. Un CAF vence a los **6 meses** de su autorización (Res. Ex. SII 58/2017; Faro lo
+aplica a todos los tipos): no se usa nunca, porque el SII rechazaría el documento (`CAF-3-517`)
+y el folio se perdería. `GET /api/v1/empresa/folios` muestra lo disponible y cuándo vence cada
+CAF; el administrador puede fijar otro con `PUT /api/v1/caf/{id}/en-uso`.
 
 ## Emitir
 
@@ -100,8 +139,8 @@ Respuesta (200), al instante:
 ```
 
 - **El PDF ya vale para entregar**: está timbrado (`GET /api/v1/dte/documentos/{dte_id}/pdf`).
-- **`emisor` es opcional**: sin él, Faro usa los datos del negocio (paso 3 del alta). Con varios
-  negocios en la instancia, manda `rut_emisor`. Si le faltan datos al negocio, 422 con la lista.
+- **`emisor` es opcional**: sin él, Faro usa los datos de la empresa (paso 1 del alta). Si le
+  faltan datos, 422 con la lista.
 - **Manda siempre `id_externo`** (el identificador de la venta en tu sistema). Si no recibiste la
   respuesta, reintenta con el mismo JSON y el mismo `id_externo`: devuelve el mismo documento
   (`repetido: true`), sin gastar otro folio. Un JSON distinto sobre un documento ya timbrado
@@ -113,7 +152,8 @@ Respuesta (200), al instante:
   calcula los totales.
 - Los datos inválidos responden 422 **sin gastar folio** (RUT, referencias de 56/61, esquema XSD).
 - **`envio`** dice qué pasa con el envío: `programado` (Faro lo envía), `no_solicitado` (mandaste
-  `"enviar": false`), `desactivado` (la instancia tiene `ENVIO_SII=desactivado`) o, en un
+  `"enviar": false`), `desactivado` (la instancia tiene `ENVIO_SII=desactivado`), `simulacion`
+  (la empresa está en modo demo: el documento nunca se envía) o, en un
   reintento, el estado actual.
 - **Probar sin gastar folios:** `POST /api/v1/dte/previsualizar` (`dte`; `cert_id` opcional)
   firma, timbra, valida XSD y devuelve el PDF marcado **BORRADOR**, sin consumir folio ni enviar.
@@ -161,13 +201,14 @@ sale cada documento.
 
 ## Pruebas y producción: las mismas llamadas
 
-Tu sistema no cambia nada entre ambientes. Cambia la instancia:
+Tu sistema no cambia nada entre ambientes. Cambia el ambiente de la empresa (por la API) y si
+la instancia envía al SII (`ENVIO_SII` del `.env`):
 
-| Ambiente | Configuración de la instancia | Qué pasa |
+| Ambiente | Cómo se llega | Qué pasa |
 |---|---|---|
-| Local | `ENVIO_SII=desactivado` (por defecto), CAF y certificado ficticios del corpus | Emite y entrega el PDF. `envio: "desactivado"`, el estado queda `generado`, nada sale al SII. Para desarrollar la integración. |
-| Certificación | `ENVIO_SII=activo`, `SII_AMBIENTE=certificacion`, CAF y certificado reales | Envía al SII de pruebas (facturas a maullin, boletas a pangal). Veredicto real. |
-| Producción | `ENVIO_SII=activo`, `SII_AMBIENTE=produccion` | Envía al SII real (palena y rahue). |
+| Demo (`simulacion`) | La empresa nace así; CAF y certificado ficticios del corpus | Emite y entrega el PDF. `envio: "simulacion"`, el estado queda `generado`, nada sale al SII aunque `ENVIO_SII` esté activo. Para aprender y desarrollar la integración. |
+| Certificación | `ENVIO_SII=activo`; `PUT /api/v1/empresa/ambiente` (valida el RUT); CAF de certificación y certificado real | Envía al SII de pruebas (facturas a maullin, boletas a pangal). Veredicto real. |
+| Producción | `ENVIO_SII=activo`; `PUT /api/v1/empresa/ambiente` (exige los requisitos); CAF de producción | Envía al SII real (palena y rahue). |
 
 Mismo JSON, mismas respuestas, mismos estados. **Por verificar en certificación:** si la factura
 debe estar aceptada por el SII antes de entregarla al receptor (la boleta se entrega al tiro).
@@ -179,8 +220,7 @@ debe estar aceptada por el SII antes de entregarla al receptor (la boleta se ent
 - `GET /api/v1/dte/documentos/buscar?rut_emisor=&tipo_dte=&folio=`: el mismo, por folio.
 - `GET /api/v1/dte/documentos/{dte_id}/pdf` y `/xml`: el PDF con timbre y el XML firmado.
 - `GET /api/v1/dte/documentos`: listado con filtros (administrador).
-- `GET /api/v1/caf/folios/siguiente/{rut}/{tipo}` y `GET /api/v1/monitoreo/folios?rut=…`: folios
-  restantes.
+- `GET /api/v1/empresa/folios`: folios restantes por tipo y vencimiento de cada CAF.
 
 ## Consulta pública de boletas
 

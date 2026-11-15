@@ -7,7 +7,8 @@ Migraciones (Alembic) contra el esquema heredado de upstream (docs/deploy/PLAN.m
 - Una base heredada (sin `alembic_version`) se adopta sin perder datos.
 - `downgrade` a la base y vuelta a `upgrade` funciona.
 - Con PostgreSQL (`FARO_TEST_DATABASE_URL`), su esquema tiene las mismas tablas, columnas,
-  nulos, claves, únicos e índices que el de SQLite.
+  nulos, claves, únicos, índices y llaves foráneas que el de SQLite.
+- `0005`: el ambiente es una llave foránea y el mismo folio cabe en dos ambientes.
 """
 from __future__ import annotations
 
@@ -23,7 +24,7 @@ from sqlalchemy import create_engine, inspect
 from core import datos, migrar
 
 IGNORADAS = {"alembic_version", "sqlite_sequence"}
-TABLAS_HEAD = 14   # las 13 heredadas + emisiones (0002)
+TABLAS_HEAD = 15   # las 13 heredadas + emisiones (0002) + ambientes (0005)
 
 
 def _sqlite_master(ruta: Path) -> dict:
@@ -107,6 +108,8 @@ def _estructura(url: str) -> dict:
             "unicos": sorted(tuple(sorted(u["column_names"])) for u in insp.get_unique_constraints(tabla))
             + sorted(tuple(sorted(i["column_names"])) for i in insp.get_indexes(tabla) if i.get("unique")),
             "indices": sorted(i["name"] for i in insp.get_indexes(tabla) if not i.get("unique")),
+            "foraneas": sorted((tuple(f["constrained_columns"]), f["referred_table"], tuple(f["referred_columns"]))
+                               for f in insp.get_foreign_keys(tabla)),
         }
     eng.dispose()
     return out
@@ -126,3 +129,47 @@ def test_postgres_tiene_la_misma_estructura_que_sqlite(cliente, carpeta):
     for t in list(sqlite.values()) + list(postgres.values()):
         t["unicos"] = sorted(set(t["unicos"]))
     assert sqlite == postgres
+
+
+def test_0005_ambiente_con_llave_foranea_y_folio_por_ambiente(carpeta):
+    """Datos de `0004` suben a `0005` con su ambiente; el folio 1 cabe en certificación y en
+    producción, y un ambiente que no existe se rechaza."""
+    from sqlalchemy.exc import IntegrityError
+
+    ruta = carpeta / "ambientes.db"
+    ahora = "2026-11-14T10:00:00"
+    with datos.con_url(_url(ruta)):
+        cfg = migrar.configuracion()
+        command.upgrade(cfg, "0004")
+        with datos.transaccion() as con:
+            con.execute("INSERT INTO dtes (tipo_dte, folio, rut_emisor, rut_receptor, fecha_emision, monto_total, "
+                        "ambiente, creado_en, actualizado_en) VALUES (33, 1, '76111111-6', '66666666-6', "
+                        "'2026-11-14', 1190, NULL, ?, ?)", (ahora, ahora))
+            con.execute("INSERT INTO cafs (tipo_dte, rut_emisor, folio_desde, folio_hasta, folio_siguiente, "
+                        "fecha_autorizacion, caf_xml, creado_en) VALUES (33, '76111111-6', 1, 10, 2, "
+                        "'2026-11-01', '<CAF/>', ?)", (ahora,))
+            con.execute("INSERT INTO cafs (tipo_dte, rut_emisor, folio_desde, folio_hasta, folio_siguiente, "
+                        "fecha_autorizacion, caf_xml, creado_en) VALUES (39, '77777777-7', 1, 10, 2, "
+                        "'2026-11-01', '<CAF/>', ?)", (ahora,))
+            con.execute("INSERT INTO dtes (tipo_dte, folio, rut_emisor, rut_receptor, fecha_emision, monto_total, "
+                        "ambiente, creado_en, actualizado_en) VALUES (39, 1, '77777777-7', '66666666-6', "
+                        "'2026-11-14', 1190, 'simulacion', ?, ?)", (ahora, ahora))   # la demo usó ese CAF
+            con.execute("INSERT INTO emisiones (origen, id_externo, huella, dte_id, creado_en, actualizado_en) "
+                        "VALUES ('apikey:1', 'pedido-1', 'h', 1, ?, ?)", (ahora, ahora))
+            con.execute("INSERT INTO folios_gestion (clave, ultima_accion) VALUES ('76111111-6|39', 'repuesto')")
+        command.upgrade(cfg, "head")
+        with datos.transaccion() as con:
+            assert con.execute("SELECT ambiente FROM dtes WHERE id=1").fetchone()[0] == "certificacion"
+            assert [f[0] for f in con.execute("SELECT ambiente FROM cafs ORDER BY id").fetchall()]                 == ["certificacion", "simulacion"]
+            assert con.execute("SELECT ambiente FROM emisiones").fetchone()[0] == "certificacion"
+            assert con.execute("SELECT clave FROM folios_gestion").fetchone()[0] == "76111111-6|39|certificacion"
+            # El mismo folio, en producción: otro documento.
+            con.execute("INSERT INTO dtes (tipo_dte, folio, rut_emisor, rut_receptor, fecha_emision, monto_total, "
+                        "ambiente, creado_en, actualizado_en) VALUES (33, 1, '76111111-6', '66666666-6', "
+                        "'2026-11-14', 1190, 'produccion', ?, ?)", (ahora, ahora))
+        for ambiente in ("certificacion", "pruebas"):   # repetido en su ambiente; ambiente que no existe
+            with pytest.raises(IntegrityError):
+                with datos.transaccion() as con:
+                    con.execute("INSERT INTO dtes (tipo_dte, folio, rut_emisor, rut_receptor, fecha_emision, "
+                                "monto_total, ambiente, creado_en, actualizado_en) VALUES (33, 1, '76111111-6', "
+                                "'66666666-6', '2026-11-14', 1190, ?, ?, ?)", (ambiente, ahora, ahora))

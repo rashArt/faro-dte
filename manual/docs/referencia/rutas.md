@@ -18,20 +18,23 @@ Todas las rutas cuelgan de la URL de la instancia (por ejemplo `http://faro-acme
 
 ## Configuración de la empresa
 
+Una instancia atiende a una sola empresa: estas rutas no llevan id ni RUT. Las marcadas con
+**A** son solo del administrador: un token de integración recibe `403`. Las demás las usa
+cualquier credencial.
+
 | Método | Ruta | Para qué |
 |---|---|---|
-| `POST` | `/api/v1/keystore/certificados` | Subir un certificado (multipart: `archivo`, `password`, `nombre`) |
-| `GET` | `/api/v1/keystore/certificados` | Listar certificados (sin secretos) |
-| `DELETE` | `/api/v1/keystore/certificados/{cert_id}` | Eliminar un certificado |
-| `POST` | `/api/v1/keystore/negocios` | Crear la empresa emisora (form: `rut`, `cert_id`, `ambiente`) |
-| `GET` | `/api/v1/keystore/negocios` | Listar empresas con sus datos de emisor |
-| `PUT` | `/api/v1/keystore/negocios/{id}` | Datos del emisor (giro, dirección, código de actividad…) |
-| `POST` | `/api/v1/caf` | Cargar un CAF (multipart: `archivo`) |
-| `GET` | `/api/v1/caf` | Listar CAF cargados |
-| `GET` | `/api/v1/caf/activo/{rut}/{tipo}` | CAF en uso para un tipo |
-| `GET` | `/api/v1/caf/folios/siguiente/{rut}/{tipo}` | Siguiente folio y rango del CAF |
+| `GET` | `/api/v1/empresa` | Datos, ambiente, certificado y qué falta para producción (`?consultar_sii=true` pregunta al SII) |
+| `PUT` | `/api/v1/empresa` | **A** · Crear la empresa (`rut`) o actualizar sus datos (razón social, giro, dirección, código de actividad…) |
+| `PUT` | `/api/v1/empresa/certificado` | **A** · Subir el certificado (multipart: `archivo`, `password`, `nombre`) |
+| `PUT` | `/api/v1/empresa/ambiente` | **A** · Cambiar de ambiente: `simulacion` (demo), `certificacion` o `produccion` (`ambiente`, `confirmar_rut`) |
+| `GET` | `/api/v1/empresa/folios` | Folios disponibles por tipo y vencimiento de cada CAF (`?ambiente=`) |
+| `POST` | `/api/v1/caf` | Cargar un CAF (multipart: `archivo`; `ambiente` opcional) |
+| `GET` | `/api/v1/caf` | Listar CAF cargados (`?ambiente=`, `?tipo_dte=`) |
+| `PUT` | `/api/v1/caf/{id}/en-uso` | **A** · Fijar el CAF del que salen los folios de su tipo |
 
-Ver [Configurar la empresa](../guias/configurar-empresa.md).
+Ver [Configurar la empresa](../guias/configurar-empresa.md) y
+[Pasar a producción](../guias/pasar-a-produccion.md).
 
 ## Cuenta y token
 
@@ -45,7 +48,6 @@ Ver [Configurar la empresa](../guias/configurar-empresa.md).
 | Método | Ruta | Para qué |
 |---|---|---|
 | `GET` | `/api/v1/valores` | UF, UTM y dólar vigentes (`?fecha=AAAA-MM-DD`) |
-| `GET` | `/api/v1/monitoreo/folios?rut=…` | Folios restantes por tipo |
 
 ## Consulta pública (sin token)
 

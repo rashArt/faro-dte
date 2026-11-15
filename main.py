@@ -31,6 +31,8 @@ from core.models import obtener_usuario_por_username, crear_usuario, listar_usua
 from core.auth import hash_password, requerir_administrador, requerir_autenticacion
 
 from api.routes import certificado, caf, dte, status, auth, auditoria, db, keystore, onboarding, monitoreo, consulta, apikeys, mipyme, simulacion, valores
+from api.routes import empresa as empresa_rutas
+from core.ambiente import PRODUCCION, ambiente_actual
 from api.errors import registrar_manejo_errores
 from api import auditoria as auditoria_peticiones
 
@@ -58,17 +60,7 @@ async def lifespan(app: FastAPI):
     logger = logging.getLogger("dte.startup")
 
     logger.info(f"Iniciando {settings.app_name} v{settings.app_version}")
-    logger.info(f"Ambiente SII: {settings.sii_ambiente}")
     logger.info(f"Base de datos: {url_segura()}")
-
-    # ---- Chequeo de seguridad: avisar siempre; en producción, abortar ----
-    problemas = settings.problemas_seguridad()
-    for p in problemas:
-        logger.warning("SEGURIDAD: %s", p)
-    if problemas and settings.es_produccion:
-        raise RuntimeError(
-            "Arranque abortado: hay configuración insegura en PRODUCCIÓN. "
-            "Corrige antes de emitir DTE reales → " + " | ".join(problemas))
 
     # Crear directorios necesarios
     settings.ensure_directories()
@@ -77,6 +69,20 @@ async def lifespan(app: FastAPI):
     # Inicializar base de datos
     init_db()
     logger.info("Base de datos inicializada correctamente")
+
+    # El ambiente es de la empresa (fase 7 de docs/deploy/PLAN.md): se cambia por la API y
+    # `SII_AMBIENTE` es solo el valor inicial. Por eso se lee después de abrir la base.
+    en_produccion = ambiente_actual() == PRODUCCION
+    logger.info(f"Ambiente SII: {ambiente_actual()}")
+
+    # ---- Chequeo de seguridad: avisar siempre; en producción, abortar ----
+    problemas = settings.problemas_seguridad()
+    for p in problemas:
+        logger.warning("SEGURIDAD: %s", p)
+    if problemas and en_produccion:
+        raise RuntimeError(
+            "Arranque abortado: hay configuración insegura en PRODUCCIÓN. "
+            "Corrige antes de emitir DTE reales → " + " | ".join(problemas))
 
     # Crear usuario admin si no existe ningún usuario
     usuarios = listar_usuarios()
@@ -122,7 +128,7 @@ async def lifespan(app: FastAPI):
     if settings.envio_sii == "activo":
         programador_despacho.intervalo_seg = settings.despacho_intervalo_seg
         programador_despacho.iniciar()
-    elif settings.es_produccion:
+    elif en_produccion:
         logger.warning("ENVIO_SII=desactivado en PRODUCCIÓN: se emite pero nada llega al SII.")
     else:
         logger.info("Envío al SII desactivado (ENVIO_SII=desactivado): se emite sin enviar")
@@ -248,6 +254,7 @@ app.include_router(status.router, dependencies=_PROTEGIDO)
 app.include_router(db.router, dependencies=[Depends(requerir_administrador)], include_in_schema=False)
 app.include_router(auditoria.router)
 app.include_router(keystore.router)
+app.include_router(empresa_rutas.router)   # la empresa de la instancia (fase 7); protegido en cada ruta
 app.include_router(onboarding.router)
 app.include_router(apikeys.router)
 app.include_router(monitoreo.router)
@@ -308,6 +315,14 @@ async def pagina_documentos():
     return FileResponse(str(_STATIC_DIR / "documentos.html"), headers={"Cache-Control": "no-cache"})
 
 
+def _empresa_configurada() -> bool:
+    from core import empresa
+    try:
+        return empresa.obtener() is not None or settings.empresa_configurada
+    except Exception:  # noqa: BLE001 — /health responde aunque la base no esté
+        return settings.empresa_configurada
+
+
 # ---- Rutas raíz ----
 @app.get("/", tags=["Health"], summary="Health check")
 async def root():
@@ -317,8 +332,8 @@ async def root():
         "servicio": settings.app_name,
         "version": settings.app_version,
         "documentacion": "/docs",
-        "ambiente_sii": settings.sii_ambiente,
-        "empresa_configurada": settings.empresa_configurada,
+        "ambiente_sii": ambiente_actual(),
+        "empresa_configurada": _empresa_configurada(),
     }
 
 
@@ -340,8 +355,8 @@ async def health():
         "status": "ok",
         "timestamp": datetime.now().isoformat(),
         "python_version": sys.version,
-        "ambiente_sii": settings.sii_ambiente,
-        "empresa_configurada": settings.empresa_configurada,
+        "ambiente_sii": ambiente_actual(),
+        "empresa_configurada": _empresa_configurada(),
         "dependencias": dependencias,
     }
 

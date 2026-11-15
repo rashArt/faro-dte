@@ -139,10 +139,12 @@ def asegurar_mundo() -> None:
     carpeta().mkdir(parents=True, exist_ok=True)
     fijar_resolucion_local(RUT_DEMO, "2026-01-01", 0)
     for t in TIPOS_DEMO:
-        if not obtener_caf_activo(RUT_DEMO, t):
+        # Si el CAF demo se agotó no se crea otro con el mismo rango: se reinicia la simulación.
+        if not database.obtenerUno("SELECT 1 FROM cafs WHERE rut_emisor=? AND tipo_dte=? AND ambiente=?",
+                                   (RUT_DEMO, t, AMBIENTE)):
             registrar_caf(tipo_dte=t, rut_emisor=RUT_DEMO, folio_desde=1, folio_hasta=FOLIOS_POR_TIPO,
                           fecha_autorizacion=date.today().isoformat(),
-                          caf_xml=_caf_ficticio(t, 1, FOLIOS_POR_TIPO))
+                          caf_xml=_caf_ficticio(t, 1, FOLIOS_POR_TIPO), ambiente=AMBIENTE)
 
 
 # ---------------------------------------------------------------------------
@@ -289,7 +291,7 @@ def estado() -> dict:
     asegurar_mundo()
     folios = {}
     for t in TIPOS_DEMO:
-        c = obtener_caf_activo(RUT_DEMO, t)
+        c = obtener_caf_activo(RUT_DEMO, t, AMBIENTE)
         folios[str(t)] = {"siguiente": c["folio_siguiente"], "hasta": c["folio_hasta"]} if c else None
     n = database.obtenerUno("SELECT COUNT(*) AS n FROM dtes WHERE rut_emisor=?", (RUT_DEMO,))["n"]
     return {"empresa": EMISOR_DEMO.model_dump(), "documentos": n, "folios": folios, "ambiente": AMBIENTE}
@@ -299,8 +301,8 @@ def reiniciar() -> dict:
     """Borra TODO lo de la empresa demo (documentos, CAF, archivos) y la deja en folio 1.
     Solo aquí se puede 'borrar': es práctica. En el mundo real no existe este botón."""
     with database.get_db() as conn:
-        a = conn.execute("DELETE FROM dtes WHERE rut_emisor=?", (RUT_DEMO,)).rowcount
-        b = conn.execute("DELETE FROM cafs WHERE rut_emisor=?", (RUT_DEMO,)).rowcount
+        a = conn.execute("DELETE FROM dtes WHERE rut_emisor=? AND ambiente=?", (RUT_DEMO, AMBIENTE)).rowcount
+        b = conn.execute("DELETE FROM cafs WHERE rut_emisor=? AND ambiente=?", (RUT_DEMO, AMBIENTE)).rowcount
     shutil.rmtree(carpeta(), ignore_errors=True)
     asegurar_mundo()
     return {"documentos_borrados": a, "cafs_borrados": b}

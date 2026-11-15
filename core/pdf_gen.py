@@ -357,7 +357,8 @@ def generar_pdf_dte(
     # Leyenda bajo el timbre: la resolución es POR EMISOR y por ambiente (L4).
     from core.config import settings
     from core.resolucion import resolucion_emisor
-    ambiente = ambiente or settings.sii_ambiente
+    from core.ambiente import ambiente_actual
+    ambiente = ambiente or ambiente_actual()
     story.append(Spacer(1, 2 * mm))
     if ambiente == "simulacion":
         story.append(Paragraph("Documento de práctica — no existe en www.sii.cl", estilo_timbre))

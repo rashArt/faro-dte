@@ -37,7 +37,7 @@ class Settings(BaseSettings):
     debug: bool = Field(default=False, description="Modo debug")
 
     # ---- SII Chile ----
-    sii_ambiente: str = Field(default="certificacion", description="Ambiente SII: certificacion o produccion")
+    sii_ambiente: str = Field(default="certificacion", description="Ambiente con que nace la empresa: simulacion (demo, motor Python), certificacion o produccion")
     # Resolución de PRODUCCIÓN (la que autoriza a emitir de verdad).
     sii_fecha_resolucion: str = Field(default="2014-08-22", description="Fecha resolución SII (producción)")
     sii_numero_resolucion: int = Field(default=80, description="Número resolución SII (producción)")

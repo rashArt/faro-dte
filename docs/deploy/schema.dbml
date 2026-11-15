@@ -1,9 +1,15 @@
 // Esquema de la base de Faro (motor Python), generado por tools/generar_dbml.py.
-// Migración: 0004. No editar a mano: regenerar tras cada migración.
+// Migración: 0005. No editar a mano: regenerar tras cada migración.
 // Tipos de SQLite; en PostgreSQL, INTEGER es BIGINT, REAL es DOUBLE PRECISION y BLOB es BYTEA.
 // Las relaciones (Ref) son lógicas: el esquema heredado no declara claves foráneas.
 
 Project faro { database_type: "SQLite / PostgreSQL" }
+
+Table ambientes {
+  codigo text [pk]
+  nombre text [not null]
+  Note: 'Ambientes del SII (fork, 0005): certificacion, produccion y simulacion (demo local, nunca sale al SII). Cada CAF, documento, emisión y RVD guarda el ambiente en que nació.'
+}
 
 Table api_keys {
   id integer [pk, increment]
@@ -51,11 +57,13 @@ Table cafs {
   caf_xml text [not null]
   activo integer [default: `1`]
   creado_en text [not null]
+  en_uso integer [not null, default: `0`]
+  ambiente text [not null, default: `'certificacion'`]
   indexes {
-    (rut_emisor, tipo_dte, folio_desde, folio_hasta) [unique]
+    (rut_emisor, tipo_dte, folio_desde, folio_hasta, ambiente) [unique]
     (rut_emisor, tipo_dte) [name: 'idx_cafs_rut_tipo']
   }
-  Note: 'Rangos de folios autorizados por el SII. folio_siguiente es el contador atómico (L7).'
+  Note: 'Rangos de folios autorizados por el SII. folio_siguiente es el contador atómico (L7). ambiente: los CAF de certificación y de producción son distintos y no se mezclan (fork, 0005).'
 }
 
 Table certificados {
@@ -104,7 +112,7 @@ Table dtes {
   track_id integer
   xml_firmado text
   pdf_path text
-  ambiente text [default: `'certificacion'`]
+  ambiente text [not null, default: `'certificacion'`]
   creado_en text [not null]
   actualizado_en text [not null]
   intento integer [not null, default: `0`]
@@ -119,14 +127,14 @@ Table dtes {
   veredicto_en text
   motivo_sii text
   indexes {
-    (rut_emisor, tipo_dte, folio) [unique]
+    (rut_emisor, tipo_dte, folio, ambiente) [unique]
     (seguimiento, estado, proxima_accion) [name: 'idx_dtes_despacho']
     (estado) [name: 'idx_dtes_estado']
     (fecha_emision) [name: 'idx_dtes_fecha']
     (rut_emisor) [name: 'idx_dtes_rut_emisor']
     (tipo_dte, folio) [name: 'idx_dtes_tipo_folio']
   }
-  Note: 'Documentos emitidos: uno por folio (UNIQUE rut_emisor + tipo_dte + folio). Guarda el XML firmado. estado reservado/error = sin timbre (el folio se reusa); intento nombra la carpeta de archivos. origen = quién lo emitió por /dte/emitir (usuario:<id> o apikey:<id>; fork, 0003). Despacho al SII (fork, 0004): seguimiento, intentos_envio, proxima_accion, tomado_hasta, enviado_en, consultado_en, veredicto_en, motivo_sii; estados enviado, aceptado, aceptado_con_reparos, rechazado, envio_fallido, sin_veredicto.'
+  Note: 'Documentos emitidos: uno por folio y ambiente (UNIQUE rut_emisor + tipo_dte + folio + ambiente; fork, 0005: el folio 1 existe en certificación y en producción). Guarda el XML firmado. estado reservado/error = sin timbre (el folio se reusa); intento nombra la carpeta de archivos. origen = quién lo emitió por /dte/emitir (usuario:<id> o apikey:<id>; fork, 0003). Despacho al SII (fork, 0004): seguimiento, intentos_envio, proxima_accion, tomado_hasta, enviado_en, consultado_en, veredicto_en, motivo_sii; estados enviado, aceptado, aceptado_con_reparos, rechazado, envio_fallido, sin_veredicto.'
 }
 
 Table emisiones {
@@ -137,11 +145,12 @@ Table emisiones {
   dte_id integer
   creado_en text [not null]
   actualizado_en text [not null]
+  ambiente text [not null, default: `'certificacion'`]
   indexes {
-    (origen, id_externo) [unique]
+    (origen, id_externo, ambiente) [unique]
     (dte_id) [name: 'ix_emisiones_dte_id']
   }
-  Note: 'Ventas de cada integración (origen + id_externo): huella del JSON y el documento que las atiende. dte_id NULL si el folio de un intento fallido pasó a otra venta (fork, 0002).'
+  Note: 'Ventas de cada integración (origen + id_externo + ambiente): huella del JSON y el documento que las atiende. dte_id NULL si el folio de un intento fallido pasó a otra venta (fork, 0002).'
 }
 
 Table folios_gestion {
@@ -149,7 +158,7 @@ Table folios_gestion {
   ultima_accion text
   ultimo_ts text
   detalle text
-  Note: 'Estado de la reposición automática de folios por clave (rut y tipo).'
+  Note: 'Estado de la reposición automática de folios por clave (rut|tipo|ambiente).'
 }
 
 Table negocios {
@@ -158,7 +167,7 @@ Table negocios {
   rut text [not null]
   razon_social text
   cert_id integer
-  ambiente text [default: `'certificacion'`]
+  ambiente text [not null, default: `'certificacion'`]
   creado text [not null]
   estado text
   estado_etiqueta text
@@ -230,11 +239,12 @@ Table rvd_envios {
   detalle text
   creado_en text [not null]
   actualizado_en text
+  ambiente text [not null, default: `'certificacion'`]
   indexes {
-    (rut_emisor, fecha, sec_envio) [unique]
+    (rut_emisor, fecha, sec_envio, ambiente) [unique]
     (rut_emisor, fecha) [name: 'idx_rvd_rut_fecha']
   }
-  Note: 'Registro de Ventas Diario de boletas: una fila por emisor, día y secuencia.'
+  Note: 'Registro de Ventas Diario de boletas: una fila por emisor, día, secuencia y ambiente.'
 }
 
 Table usuarios {
@@ -261,6 +271,12 @@ Table valores {
   Note: 'UF, UTM y dólar por fecha (referencia pública del SII).'
 }
 
+Ref: dtes.ambiente > ambientes.codigo // llave foránea (0005)
+Ref: cafs.ambiente > ambientes.codigo // llave foránea (0005)
+Ref: emisiones.ambiente > ambientes.codigo // llave foránea (0005)
+Ref: rvd_envios.ambiente > ambientes.codigo // llave foránea (0005)
+Ref: negocios.ambiente > ambientes.codigo // llave foránea (0005)
+Ref: resolucion_cache.ambiente > ambientes.codigo // llave foránea (0005)
 Ref: certificados.cuenta_id > usuarios.id // cuenta dueña
 Ref: claves_sii.cuenta_id > usuarios.id // cuenta dueña
 Ref: negocios.cuenta_id > usuarios.id // cuenta dueña

@@ -20,6 +20,7 @@ nav = [
   ] },
   { "Guías" = [
     { "Configurar la empresa" = "guias/configurar-empresa.md" },
+    { "Pasar a producción" = "guias/pasar-a-produccion.md" },
     { "Emitir un documento" = "guias/emitir.md" },
     { "Seguir el veredicto del SII" = "guias/seguir-veredicto.md" },
     { "Reintentos e idempotencia" = "guias/idempotencia.md" },
