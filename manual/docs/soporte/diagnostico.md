@@ -39,7 +39,7 @@ flowchart TB
 | `422 validacion` "esquema del SII (XSD)" | Un dato no cumple el formato del SII (largo, caracteres) | Revisar `detalle.errores` |
 | `422 validacion` en una nota | Falta `referencias` | Agregar la referencia al documento original |
 | `409 sin_folios` | `detalle.motivo` dice cuál: `agotado` (se acabaron), `vencido` (el CAF tiene más de 6 meses) o `sin_caf` (no hay CAF en este ambiente; los de certificación no sirven en producción) | Cargar un CAF nuevo del ambiente actual (`POST /api/v1/caf`) |
-| `409 requisitos_certificacion` | La empresa está en demo y el SII no muestra su RUT en certificación (o no respondió) | Inscribir la empresa en el ambiente de certificación del SII; si fue el SII, reintentar |
+| `409 requisitos_certificacion` | La empresa está en demo y el SII no muestra su RUT en certificación (o no respondió), o es un RUT de demostración (`rut_ficticio`) | Inscribir la empresa en el ambiente de certificación del SII; si fue el SII, reintentar. Un RUT de demostración no sale de demo |
 | `403 autorizacion` al cambiar datos, certificado o ambiente | Se usó un token de integración | Lo hace el administrador con su usuario; ver [Autenticación](../empezar/autenticacion.md#que-hace-el-administrador) |
 | `409 requisitos_produccion` | Falta algo para pasar a producción | `detalle.falta` lo lista; ver [Pasar a producción](../guias/pasar-a-produccion.md) |
 | `409 empresa_unica` | Se intentó crear otra empresa en la instancia | Cada empresa tiene su propia instancia |

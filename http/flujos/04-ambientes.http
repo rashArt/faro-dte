@@ -1,8 +1,9 @@
 # Flujo 4 — Ambientes, cambio a producción y varios CAF (fase 7 de docs/deploy/PLAN.md).
 #
-# Antes: el flujo 2 hasta el paso 4 (CAF, empresa y certificado ficticios, en modo demo). Con la
-# empresa ficticia, salir de demo SIEMPRE responde 409: el SII no conoce su RUT. Es lo esperado:
-# nada ficticio llega al SII (L1, L14). Todos los PUT de este flujo son solo del administrador.
+# Antes: el flujo 2 hasta el paso 4 (CAF, empresa y certificado ficticios, en modo demo). Requiere
+# la imagen de la fase 7: si /api/v1/empresa responde 404, reconstruye (docker compose up -d --build).
+# Con la empresa ficticia (77777777-7), salir de demo SIEMPRE responde 409 "rut_ficticio": es un RUT
+# de demostración y se frena sin consultar al SII (L1, L14). Todos los PUT son solo del administrador.
 
 @clave = {{$dotenv FARO_CLAVE}}
 @base = http://127.0.0.1:8000
@@ -26,7 +27,7 @@ Authorization: Bearer {{token}}
 GET {{base}}/api/v1/empresa/folios
 Authorization: Bearer {{token}}
 
-### 4. Cargar el mismo CAF ficticio como CAF de PRODUCCIÓN → 200; el de certificación no se toca
+### 4. Cargar el mismo CAF ficticio como CAF de PRODUCCIÓN → 200 (la segunda vez, 409 "caf_repetido"); los de otros ambientes no se tocan
 POST {{base}}/api/v1/caf
 Authorization: Bearer {{token}}
 Content-Type: multipart/form-data; boundary=FaroLimite
@@ -58,14 +59,15 @@ Content-Type: application/json
 {"ambiente": "produccion", "confirmar_rut": "76111111-6"}
 
 ### 8. Pasar a producción → 409 "requisitos_produccion"; detalle.falta dice por qué
-#    (con la empresa ficticia: "autorizacion_sii"; con CORS abierto, también "seguridad")
+#    (con la empresa ficticia: "rut_ficticio"; con CORS abierto, también "seguridad")
 PUT {{base}}/api/v1/empresa/ambiente
 Authorization: Bearer {{token}}
 Content-Type: application/json
 
 {"ambiente": "produccion", "confirmar_rut": "77777777-7"}
 
-### 9. Fijar a mano el CAF en uso (pon el id de un CAF del paso 5) → 200, "en_uso": true
+### 9. Fijar a mano el CAF en uso (pon el id de un CAF del paso 5 con "activo": true y "vigente": true)
+#    → 200, "en_uso": true. Un CAF desactivado o vencido → 409 con el motivo.
 PUT {{base}}/api/v1/caf/1/en-uso
 Authorization: Bearer {{token}}
 
@@ -76,8 +78,8 @@ Content-Type: application/json
 
 {"rut": "76111111-6"}
 
-### 11. Salir de demo a certificación → 409 "requisitos_certificacion" (falta "rut_sii")
-#     Aquí se valida el RUT: consulta el registro público del SII de certificación (solo lectura).
+### 11. Salir de demo a certificación → 409 "requisitos_certificacion" (falta "rut_ficticio")
+#     Con un RUT real, aquí se valida en el registro público del SII de certificación (solo lectura).
 PUT {{base}}/api/v1/empresa/ambiente
 Authorization: Bearer {{token}}
 Content-Type: application/json

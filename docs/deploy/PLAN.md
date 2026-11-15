@@ -363,7 +363,10 @@ misma instancia; los CAF dejan de mezclarse y de usarse vencidos. Migración `00
   (`core.ambiente.usa_sii`): se crea con un RUT bien formado, la resolución es local, el envío
   responde `simulacion` (`409 ambiente_sin_sii` a mano), y el RVD y la reposición de folios no
   corren. Salir a certificación valida el RUT en el registro del SII (409
-  `requisitos_certificacion`, código `rut_sii`) y completa la razón social si falta. Volver a
+  `requisitos_certificacion`, código `rut_sii`) y completa la razón social si falta. Los RUT de
+  demostración de L14 (`77777777-7`…) no salen de demo (`rut_ficticio`): el registro del SII lista
+  `77777777-7` como "RUT DE PRUEBA" autorizado incluso en producción (visto 2026-11-15), así que
+  la consulta al SII no bastaba. Volver a
   demo no pide nada. `docker-compose.prod.yml` y los `.env` de ejemplo nacen en `simulacion`.
 - ✅ **CAF** (`core/models.py`): cargar un CAF ya no apaga los anteriores; los folios salen del
   CAF en uso y, al agotarse o vencer, del vigente que vence primero; `PUT /api/v1/caf/{id}/en-uso`

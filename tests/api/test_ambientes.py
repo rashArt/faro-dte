@@ -21,9 +21,12 @@ DATOS = {"giro": "Cafeteria", "codigo_actividad": 561000, "direccion": "Calle Fi
 
 
 @pytest.fixture
-def sin_empresa(instancia):
-    """La instancia sin empresa ni certificados, antes y después de la prueba."""
+def sin_empresa(instancia, monkeypatch):
+    """La instancia sin empresa ni certificados, antes y después de la prueba. Las pruebas usan el
+    RUT de demostración en todos los ambientes (con el SII simulado): se quita su bloqueo."""
+    import core.empresa
     from core.database import get_db
+    monkeypatch.setattr(core.empresa, "RUTS_SOLO_DEMO", frozenset())
 
     def limpiar():
         with get_db() as con:
@@ -413,3 +416,18 @@ def test_salir_de_demo_valida_el_rut_en_el_sii(sin_empresa, admin, sii_prohibido
     monkeypatch.setattr(core.negocios, "info_empresa", sin_respuesta)                # volver a demo no pregunta
     r = _pasar(sin_empresa, admin, "simulacion")
     assert r.status_code == 200 and r.json()["empresa"]["ambiente"] == "simulacion"
+
+
+def test_un_rut_de_demostracion_no_sale_de_demo(sin_empresa, admin, sii_prohibido, monkeypatch):
+    """El SII lista 77777777-7 como autorizado incluso en producción: el bloqueo es local y va
+    antes de consultar al SII (sii_prohibido falla si se le pregunta)."""
+    import core.empresa
+    monkeypatch.setattr(core.empresa, "RUTS_SOLO_DEMO", frozenset({RUT_EMISOR}))
+    assert sin_empresa.put("/api/v1/empresa", headers=admin,
+                           json={"rut": RUT_EMISOR, "razon_social": "EMPRESA DEMO SPA", **DATOS}).status_code == 200
+    r = _pasar(sin_empresa, admin, "certificacion")
+    assert r.status_code == 409 and r.json()["error"]["codigo"] == "requisitos_certificacion"
+    assert [f["codigo"] for f in r.json()["error"]["detalle"]["falta"]] == ["rut_ficticio"]
+    r = _pasar(sin_empresa, admin, "produccion")
+    assert r.status_code == 409 and "rut_ficticio" in {f["codigo"] for f in r.json()["error"]["detalle"]["falta"]}
+    assert sin_empresa.get("/api/v1/empresa", headers=admin).json()["ambiente"] == "simulacion"

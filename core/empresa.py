@@ -32,6 +32,19 @@ logger = logging.getLogger("dte.empresa")
 
 # Lo que el SII exige en el emisor de cada documento.
 CAMPOS_EMISOR = ("razon_social", "giro", "codigo_actividad", "direccion", "comuna", "ciudad")
+
+# RUT de demostración (L14 de docs/CONSTITUCION.md): sirven solo en modo demo. El registro del SII
+# lista 77777777-7 como "RUT DE PRUEBA" autorizado incluso en producción, así que consultar al SII
+# no basta para frenarlos: se bloquean aquí, antes de cualquier consulta (L1).
+RUTS_SOLO_DEMO = frozenset({"77777777-7", "76111111-6", "12345678-5", "66666666-6", "11111111-1"})
+
+
+def _rut_demo(rut: str) -> List[dict]:
+    if _rut(rut) in RUTS_SOLO_DEMO:
+        return [{"codigo": "rut_ficticio",
+                 "detalle": f"{rut} es un RUT de demostración: solo sirve en modo demo (simulacion). "
+                            "Crea la instancia con el RUT real de la empresa para certificar o producir."}]
+    return []
 _COLUMNAS = ("id, cuenta_id, rut, razon_social, cert_id, ambiente, creado, giro, codigo_actividad, "
              "direccion, comuna, ciudad, email, telefono")
 
@@ -145,7 +158,7 @@ def requisitos_produccion(empresa: Optional[dict], *, consultar_sii: bool) -> Li
     lo demás ya se cumple, la comprobación en línea de que el SII autorizó a la empresa."""
     if empresa is None:
         return [{"codigo": "sin_empresa", "detalle": "Crea la empresa con PUT /api/v1/empresa."}]
-    falta: List[dict] = []
+    falta: List[dict] = _rut_demo(empresa["rut"])
     vacios = [c for c in CAMPOS_EMISOR if empresa.get(c) in (None, "")]
     if vacios:
         falta.append({"codigo": "datos_empresa",
@@ -187,6 +200,8 @@ def requisitos_certificacion(empresa: dict) -> List[dict]:
     """Lo que falta para salir del modo demo a certificación: que el SII conozca el RUT. En demo
     la empresa se crea sin consultarlo; aquí se valida, antes del primer contacto con el SII."""
     rut = empresa["rut"]
+    if _rut_demo(rut):
+        return _rut_demo(rut)
     try:
         info = negocios.info_empresa(rut, CERTIFICACION)
     except Exception as e:  # noqa: BLE001 — el SII no respondió

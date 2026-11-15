@@ -34,9 +34,10 @@ curl -s -X PUT "$FARO_URL/api/v1/empresa/ambiente" \
 ```
 
 - `200`: la empresa quedó en certificación. Si no tenía razón social, toma la del SII.
-- `409` con `codigo: "requisitos_certificacion"`: el SII no muestra ese RUT en su ambiente de
-  certificación, o no respondió. El ambiente no cambió. La empresa debe estar inscrita en el
-  ambiente de certificación del SII.
+- `409` con `codigo: "requisitos_certificacion"`: el ambiente no cambió. `detalle.falta` dice por
+  qué: `rut_sii` (el SII no muestra ese RUT en su ambiente de certificación, o no respondió; la
+  empresa debe estar inscrita ahí) o `rut_ficticio` (es un RUT de demostración, como
+  `77777777-7`: solo sirve en demo, aunque el SII lo liste como RUT de prueba).
 
 Lo emitido en demo queda en demo: sus folios, documentos e `id_externo` no pasan a
 certificación. Carga el CAF de certificación (`POST /api/v1/caf`) después del cambio, o antes
