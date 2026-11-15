@@ -126,6 +126,19 @@ docker run --rm --entrypoint "" <usuario>/faro-dte:1.2.0 find /app -name .env -o
 # solo debe aparecer /app/tests/dorado/fixtures/cert_demo.p12
 ```
 
+**Con GitHub Actions.** [`imagen.yml`](../../.github/workflows/imagen.yml) hace lo mismo al subir
+la etiqueta: corre la suite (SQLite y PostgreSQL), construye desde una copia limpia y publica
+`<usuario>/faro-dte:1.2.0`. Una vez, en GitHub (*Settings → Secrets and variables → Actions*):
+la variable `DOCKERHUB_USERNAME` y el secreto `DOCKERHUB_TOKEN` (un token *Read & Write* solo para
+Actions). Desde entonces publicar es:
+
+```bash
+git tag -a docker-v1.2.0 -m "Docker 1.2.0" && git push origin docker-v1.2.0
+```
+
+Sin la variable, el workflow corre la suite y omite la publicación. No publiques la misma versión
+por los dos caminos: una versión publicada no se reescribe, se saca otra.
+
 Si el repositorio de Docker Hub es privado, cada VPS entra con un token de **solo lectura**
 (`docker login -u <usuario>`), uno por servidor para poder revocarlo sin afectar a los demás.
 

@@ -389,7 +389,7 @@ misma instancia; los CAF dejan de mezclarse y de usarse vencidos. Migración `00
 - Pendiente fuera del código: lo mismo de las fases 5 y 6 (primer VPS y despacho contra el SII de
   certificación con CAF y certificado reales).
 
-### Fase 8 — Imagen publicada en un registro (en curso, 2026-11-15)
+### Fase 8 — Imagen publicada en un registro ✅ (2026-11-15)
 El VPS deja de construir: baja una imagen publicada una vez por versión.
 
 - **Decidido (2026-11-15):** Docker Hub; la etiqueta de git `docker-vX.Y.Z` es la imagen
@@ -404,9 +404,19 @@ El VPS deja de construir: baja una imagen publicada una vez por versión.
   obligatorias. `FARO_FUENTE` desaparece. Actualizar un cliente es cambiar `FARO_VERSION` en su
   `.env`, `pull` y `up` (migrar corre solo). `respaldo.sh` anota la imagen en el manifiesto.
 - ✅ `README.md`: "Publicar una versión" (manual) y despliegue y actualización con `pull`.
+- ✅ **Upstream 1.2.0 traído** (5 commits; `main` del fork queda igual al original): PyJWT en
+  vez de python-jose, pisos de seguridad en `requirements.txt`, `python:3.12.16-slim`, sala de
+  espera del SII y movimientos del RCV. Conflictos en `Dockerfile`, `api/errors.py` y
+  `motor.spec`; sin cambios de esquema. `constraints.txt` pierde python-jose y sus dependencias.
+  Suite 105 + 7 omitidas en SQLite y 106 + 6 en PostgreSQL desechable; `test_dorado` 15/15 dentro
+  de la imagen; login, 401 sin token y UID 10001 comprobados en la imagen.
 - ✅ Primera publicación a mano: imagen `1.0.0` en Docker Hub, etiqueta `docker-v1.0.0`.
-- Pendiente: workflow `.github/workflows/imagen.yml` (al crear `docker-v*`: suite, build y
-  push con secretos de GitHub) y su prueba (`docker-v1.0.1`).
+- ✅ `.github/workflows/imagen.yml`: al subir `docker-v*` corre `servidor.yml`, construye y
+  publica con `DOCKERHUB_USERNAME` (variable) y `DOCKERHUB_TOKEN` (secreto). Sin la variable,
+  omite publicar.
+- Pendiente fuera del código: crear la variable y el secreto en GitHub y probar el workflow con
+  la siguiente versión; primer VPS; despacho contra el SII de certificación con CAF y
+  certificado reales; `rotar_claves.py` con PostgreSQL.
 
 ## Política de folios
 
