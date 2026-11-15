@@ -99,7 +99,7 @@ Excepciones, siempre por nombre fijo de afuera y nunca por gusto:
   respuesta, la divergencia se anota en `tools/contrato_api.py`, no se replica en Go ni en Rust.
 - Documentos del fork en `docs/deploy/`. Los documentos de upstream se corrigen solo si dicen algo
   falso (L11).
-- Etiquetas de versión del servidor con prefijo: `servidor-v1.0.0` (imagen `1.0.0`). Las `v1.x.y`
+- Etiquetas de versión del servidor con prefijo: `docker-v1.0.0` (imagen `1.0.0`). Las `v1.x.y`
   son de upstream y llegan con su `git fetch`.
 - Commits en español, con el estilo del repositorio: `Área: qué cambia`
   (`Datos: migración 0002 con la tabla emisiones`).

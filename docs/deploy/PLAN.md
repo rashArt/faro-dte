@@ -392,7 +392,7 @@ misma instancia; los CAF dejan de mezclarse y de usarse vencidos. Migración `00
 ### Fase 8 — Imagen publicada en un registro (en curso, 2026-11-15)
 El VPS deja de construir: baja una imagen publicada una vez por versión.
 
-- **Decidido (2026-11-15):** Docker Hub; la etiqueta de git `servidor-vX.Y.Z` es la imagen
+- **Decidido (2026-11-15):** Docker Hub; la etiqueta de git `docker-vX.Y.Z` es la imagen
   `<usuario>/faro-dte:X.Y.Z` (nunca `latest` para clientes); primero a mano, para practicar, y
   después con GitHub Actions al crear la etiqueta. El prefijo evita chocar con las `v1.x.y` de
   upstream (versiones de la app de escritorio: `v1.0.0`…`v1.2.0` al 2026-11-15).
@@ -404,9 +404,9 @@ El VPS deja de construir: baja una imagen publicada una vez por versión.
   obligatorias. `FARO_FUENTE` desaparece. Actualizar un cliente es cambiar `FARO_VERSION` en su
   `.env`, `pull` y `up` (migrar corre solo). `respaldo.sh` anota la imagen en el manifiesto.
 - ✅ `README.md`: "Publicar una versión" (manual) y despliegue y actualización con `pull`.
-- ✅ Primera publicación a mano: imagen `1.0.0` en Docker Hub, etiqueta `servidor-v1.0.0`.
-- Pendiente: workflow `.github/workflows/imagen.yml` (al crear `servidor-v*`: suite, build y
-  push con secretos de GitHub) y su prueba (`servidor-v1.0.1`).
+- ✅ Primera publicación a mano: imagen `1.0.0` en Docker Hub, etiqueta `docker-v1.0.0`.
+- Pendiente: workflow `.github/workflows/imagen.yml` (al crear `docker-v*`: suite, build y
+  push con secretos de GitHub) y su prueba (`docker-v1.0.1`).
 
 ## Política de folios
 

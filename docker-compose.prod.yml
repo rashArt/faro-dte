@@ -9,7 +9,7 @@
 #   docker compose up -d             # db, luego migrar (alembic upgrade head), luego faro
 #
 # Aquí no se construye: la imagen se publica una vez por versión (etiqueta de git
-# servidor-v1.2.0 -> imagen 1.2.0) y todos los clientes bajan la misma. Actualizar = cambiar FARO_VERSION en .env.
+# docker-v1.2.0 -> imagen 1.2.0) y todos los clientes bajan la misma. Actualizar = cambiar FARO_VERSION en .env.
 #
 # Nada publica puertos: la API se llama por la red `integraciones` como
 # http://${COMPOSE_PROJECT_NAME}:8000, y la base solo existe en la red interna del cliente.

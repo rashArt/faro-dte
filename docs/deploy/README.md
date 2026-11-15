@@ -30,7 +30,7 @@ empresa cliente, con la API solo en la red interna y sin la interfaz gráfica a 
 | Motor | **Python** (`Dockerfile`, `python:3.12-slim`) | Es la referencia del proyecto y trae Swagger (`/docs`) (`docs/COMPARACION-PYTHON-GO.md`). El binario Rust (`nucleo-servidor servir`) tiene el mismo contrato de API y es el destino final del port, pero no tiene imagen Docker oficial. |
 | Aislamiento | **Una instancia por empresa** (carpeta, contenedores, volúmenes y `.env` propios) | Faro no es multi-tenant: usuarios y API keys no se separan por empresa. Una instancia por cliente aísla datos, certificados y secretos. |
 | Base de datos | **PostgreSQL** en producción, SQLite en local y pruebas | Las dos con el mismo código y el esquema en migraciones de Alembic (fase 1 de [`PLAN.md`](PLAN.md)). |
-| Imagen | **Se publica en un registro** (Docker Hub), una vez por versión: la etiqueta de git `servidor-v1.2.0` es la imagen `<usuario>/faro-dte:1.2.0`. El VPS solo la baja | No se compila en cada despliegue y todos los clientes corren exactamente la misma imagen. Corre como usuario `faro` (UID 10001), sin `.env` adentro: la configuración llega por `env_file`. Ver [Publicar una versión](#publicar-una-versión). |
+| Imagen | **Se publica en un registro** (Docker Hub), una vez por versión: la etiqueta de git `docker-v1.2.0` es la imagen `<usuario>/faro-dte:1.2.0`. El VPS solo la baja | No se compila en cada despliegue y todos los clientes corren exactamente la misma imagen. Corre como usuario `faro` (UID 10001), sin `.env` adentro: la configuración llega por `env_file`. Ver [Publicar una versión](#publicar-una-versión). |
 | Procesos | **Un proceso de uvicorn por instancia** | Alcanza para el volumen de una empresa. El RVD y la reposición de folios corren dentro del proceso y no tienen candado entre procesos: con varios, cada uno los correría. Redis queda comentado en el compose para cuando haga falta. |
 | Exposición | **Nada publica puertos.** La API va en la red `integraciones`; la base, en una red interna sin salida | `docs/PLATAFORMA.md` §5: no exponer la API REST a Internet. Tus integraciones la llaman por la red de Docker. |
 | Interfaz gráfica | **No se publica** | Las páginas (`/app`, `/docs`, `/onboarding`, `/apikeys`…) existen dentro del contenedor, pero sin puerto nadie de afuera llega a ellas. Para aprender, usa la instancia local. |
@@ -98,11 +98,11 @@ La práctica funciona sin configurar nada más. Para probar contra el SII de cer
 
 ## Publicar una versión
 
-Se hace en tu equipo, no en el VPS. Una versión es una etiqueta de git (`servidor-v1.2.0`) y su
+Se hace en tu equipo, no en el VPS. Una versión es una etiqueta de git (`docker-v1.2.0`) y su
 imagen lleva el mismo número (`<usuario>/faro-dte:1.2.0`): así cada cliente corre un commit
 conocido. Nunca se publica `latest` para clientes.
 
-Las etiquetas del fork llevan el prefijo `servidor-` porque las `v1.x.y` son de upstream (las
+Las etiquetas del fork llevan el prefijo `docker-` porque las `v1.x.y` son de upstream (las
 versiones de la app de escritorio) y llegan con cada `git fetch` del repositorio original: una
 `v1.0.0` propia chocaría con la suya. La numeración del servidor es independiente.
 
@@ -111,7 +111,7 @@ escritura (`docker login -u <usuario>` lo pide como contraseña y lo recuerda).
 
 ```bash
 git status                                   # árbol limpio: lo que no está en un commit no va
-git tag -a servidor-v1.2.0 -m "Servidor 1.2.0" && git push origin servidor-v1.2.0
+git tag -a docker-v1.2.0 -m "Docker 1.2.0" && git push origin docker-v1.2.0
 docker build -t <usuario>/faro-dte:1.2.0 .
 docker push <usuario>/faro-dte:1.2.0
 ```
@@ -140,7 +140,7 @@ compartida con tus integraciones:
 
 ```bash
 git clone https://github.com/rashArt/faro-dte.git /srv/faro-dte
-git -C /srv/faro-dte checkout servidor-v1.2.0    # la misma versión que la imagen
+git -C /srv/faro-dte checkout docker-v1.2.0    # la misma versión que la imagen
 docker network create integraciones
 docker login -u <usuario>                          # solo si la imagen es privada (token de lectura)
 ```
@@ -167,7 +167,7 @@ openssl rand -base64 18                               # ADMIN_PASSWORD
 |---|---|
 | `COMPOSE_PROJECT_NAME` | `faro-acme`: prefijo de contenedores y volúmenes, y nombre de la API en la red (`http://faro-acme:8000`) |
 | `FARO_IMAGEN` | `<usuario>/faro-dte`: la imagen publicada en Docker Hub |
-| `FARO_VERSION` | `1.2.0`: la de la etiqueta de git `servidor-v1.2.0` |
+| `FARO_VERSION` | `1.2.0`: la de la etiqueta de git `docker-v1.2.0` |
 | `ENVIO_SII` | `activo`. Con `desactivado` se emite pero nada llega al SII |
 
 El compose no levanta si falta `COMPOSE_PROJECT_NAME`, `FARO_IMAGEN`, `FARO_VERSION`,
@@ -272,7 +272,7 @@ Primero [publica la versión](#publicar-una-versión). En el VPS se cambia el `.
 `docker-compose.yml`:
 
 ```bash
-git -C /srv/faro-dte fetch --tags && git -C /srv/faro-dte checkout servidor-v1.3.0
+git -C /srv/faro-dte fetch --tags && git -C /srv/faro-dte checkout docker-v1.3.0
 cd /srv/clientes/acme
 diff /srv/faro-dte/docker-compose.prod.yml docker-compose.yml   # ¿cambió el compose? cópialo
 /srv/faro-dte/tools/respaldo.sh respaldar
