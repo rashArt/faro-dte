@@ -185,8 +185,7 @@ class OrquestadorDTE:
         totales, ted_xml = self._timbrar(dte_input, caf_manejador)
         return cert, totales, ted_xml
 
-    @staticmethod
-    def _caf_activo(rut_emisor: str, tipo_dte: int) -> ManejadorCAF:
+    def _caf_activo(self, rut_emisor: str, tipo_dte: int) -> ManejadorCAF:
         """El CAF activo del emisor y tipo, o `FolioError` si no hay."""
         caf_db = obtener_caf_activo(rut_emisor, tipo_dte, self.ambiente)
         if not caf_db:

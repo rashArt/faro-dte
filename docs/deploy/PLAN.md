@@ -394,7 +394,7 @@ El VPS deja de construir: baja una imagen publicada una vez por versión.
 
 - **Decidido (2026-11-15):** Docker Hub; la etiqueta de git `docker-vX.Y.Z` es la imagen
   `<usuario>/faro-dte:X.Y.Z` (nunca `latest` para clientes); primero a mano, para practicar, y
-  después con GitHub Actions al crear la etiqueta. El prefijo evita chocar con las `v1.x.y` de
+  después se evaluó GitHub Actions y se descartó. El prefijo evita chocar con las `v1.x.y` de
   upstream (versiones de la app de escritorio: `v1.0.0`…`v1.2.0` al 2026-11-15).
 - ✅ **`.dockerignore`:** los patrones sin `**/` solo cubrían la raíz, así que `http/.env` (el de
   los flujos `.http`) entraba a la imagen. Ahora `.env`, bases SQLite, certificados, `__pycache__`
@@ -411,11 +411,12 @@ El VPS deja de construir: baja una imagen publicada una vez por versión.
   Suite 105 + 7 omitidas en SQLite y 106 + 6 en PostgreSQL desechable; `test_dorado` 15/15 dentro
   de la imagen; login, 401 sin token y UID 10001 comprobados en la imagen.
 - ✅ Primera publicación a mano: imagen `1.0.0` en Docker Hub, etiqueta `docker-v1.0.0`.
-- ✅ `.github/workflows/imagen.yml`: al subir `docker-v*` corre `servidor.yml`, construye y
-  publica con `DOCKERHUB_USERNAME` (variable) y `DOCKERHUB_TOKEN` (secreto). Sin la variable,
-  omite publicar.
-- Pendiente fuera del código: crear la variable y el secreto en GitHub y probar el workflow con
-  la siguiente versión; primer VPS; despacho contra el SII de certificación con CAF y
+- **Sin GitHub Actions para la imagen** (decidido 2026-11-15): se publica a mano. Workflows del
+  fork: `servidor.yml` (pruebas) y `manual.yml`; `dorado.yml` queda desactivado desde GitHub.
+- ✅ Corregido `OrquestadorDTE._caf_activo` (era `@staticmethod` y usaba `self.ambiente` desde la
+  fase 7: el mundo de práctica fallaba con `NameError`). `servidor.yml` ahora corre
+  `test_simulacion.py` y `auditar_publico.py`.
+- Pendiente fuera del código: primer VPS; despacho contra el SII de certificación con CAF y
   certificado reales; `rotar_claves.py` con PostgreSQL.
 
 ## Política de folios

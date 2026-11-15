@@ -1,13 +1,14 @@
 name: servidor (fork)
 
-# Gates del motor Python como servidor de API (docs/deploy/PLAN.md). No reemplaza a
-# dorado.yml, que sigue midiendo la firma y los ports Go/Rust.
+# Gates del motor Python como servidor de API (docs/deploy/PLAN.md). Es el único workflow de
+# pruebas del fork: dorado.yml (firma y ports Go/Rust) corre en el repositorio original y aquí
+# se deja desactivado desde GitHub (Actions -> corpus dorado -> Disable workflow), sin borrar el
+# archivo para no chocar al traer cambios de upstream. De él se repiten aquí los gates de Python.
 on:
   push:
     paths: ["core/**", "api/**", "migraciones/**", "tests/**", "main.py", "alembic.ini", "Dockerfile",
             "requirements*.txt", "constraints.txt", "pytest.ini", ".gitattributes", ".github/workflows/servidor.yml"]
   pull_request:
-  workflow_call:      # imagen.yml lo corre antes de publicar una versión
 
 jobs:
   pytest:
@@ -29,9 +30,16 @@ jobs:
           --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 5s --health-retries 20
     steps:
       - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }   # la auditoría pública recorre toda la historia
       - uses: actions/setup-python@v5
         with: { python-version: "3.12", cache: pip }
       - run: pip install -r requirements-dev.txt -c constraints.txt
+      - name: Público (ni RUTs reales, ni personas, ni secretos; árbol, historia y .gitignore)
+        if: matrix.base == 'sqlite'
+        run: python tools/auditar_publico.py
+      - name: Mundo de práctica (modo demo del orquestador, sin red)
+        if: matrix.base == 'sqlite'
+        run: python tests/scripts/test_simulacion.py
       - name: Suite pytest (${{ matrix.base }})
         env:
           FARO_TEST_DATABASE_URL: ${{ matrix.base == 'postgres' && 'postgresql+psycopg://faro:clave-de-prueba-ci@localhost:5432/faro_pruebas' || '' }}
