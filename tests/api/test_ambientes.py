@@ -431,3 +431,26 @@ def test_un_rut_de_demostracion_no_sale_de_demo(sin_empresa, admin, sii_prohibid
     r = _pasar(sin_empresa, admin, "produccion")
     assert r.status_code == 409 and "rut_ficticio" in {f["codigo"] for f in r.json()["error"]["detalle"]["falta"]}
     assert sin_empresa.get("/api/v1/empresa", headers=admin).json()["ambiente"] == "simulacion"
+
+
+def test_el_caf_exige_la_empresa_y_su_rut(sin_empresa, admin):
+    """Una empresa por instancia: sin empresa no se sabe de quién es el CAF, y el CAF de otro RUT
+    nunca se podría usar aquí. Ninguno de los dos se guarda."""
+    from core.database import obtenerUno
+
+    def total():
+        return obtenerUno("SELECT count(*) AS n FROM cafs")["n"]
+    antes = total()
+    r = _cargar_caf(sin_empresa, admin, xml=_caf_nuevo(5001, 5010))
+    assert r.status_code == 409 and r.json()["error"]["codigo"] == "sin_empresa", r.text
+
+    assert sin_empresa.put("/api/v1/empresa", headers=admin, json={"rut": RUT_EMISOR, **DATOS}).status_code == 200
+    otro = _caf_nuevo(5001, 5010).replace(b"<RE>77777777-7</RE>", b"<RE>76111111-6</RE>")
+    r = _cargar_caf(sin_empresa, admin, xml=otro)
+    assert r.status_code == 409, r.text
+    error = r.json()["error"]
+    assert error["codigo"] == "caf_otra_empresa"
+    assert error["detalle"] == {"rut_caf": "76111111-6", "rut_empresa": RUT_EMISOR}
+    assert total() == antes
+
+    assert _cargar_caf(sin_empresa, admin, xml=_caf_nuevo(5001, 5010)).status_code == 200

@@ -1,0 +1,90 @@
+# Flujo 1 — Configurar la instancia (ADMINISTRADOR, una sola vez).
+#
+# Orden de producción: empresa → certificado → folios (CAF) → token para tu sistema.
+# Datos ficticios (EMPRESA DEMO SPA, 77777777-7, CAF y certificado del corpus): la empresa nace en
+# modo demo, firma y timbra de verdad y nada sale al SII.
+#
+# Antes: http/.env con BASE_URL y FARO_CLAVE (copia http/env.ejemplo). Ejecuta los bloques en
+# orden con "Send Request" (o Ctrl+Alt+R).
+
+@base = {{$dotenv BASE_URL}}
+@clave = {{$dotenv FARO_CLAVE}}
+@clave_cert = {{$dotenv FARO_CLAVE_CERT}}
+
+### 0. ¿Responde la instancia? → 200, "ambiente_sii" y "empresa_configurada"
+GET {{base}}/health
+
+### 1. Iniciar sesión como administrador (usuario admin, clave ADMIN_PASSWORD del servidor)
+# @name login
+POST {{base}}/api/v1/auth/login
+Content-Type: application/json
+
+{"username": "admin", "password": "{{clave}}"}
+
+###
+@admin = {{login.response.body.access_token}}
+
+### 2. Crear la empresa → 200, "ambiente": "simulacion" (modo demo). Repetirlo solo actualiza los datos
+PUT {{base}}/api/v1/empresa
+Authorization: Bearer {{admin}}
+Content-Type: application/json
+
+{"rut": "77777777-7", "razon_social": "EMPRESA DEMO SPA", "giro": "Cafeteria", "codigo_actividad": 561000,
+ "direccion": "Calle Ficticia 123", "comuna": "Santiago", "ciudad": "Santiago"}
+
+### 3. Subir su certificado → 200; queda cifrado y nunca se devuelve
+PUT {{base}}/api/v1/empresa/certificado
+Authorization: Bearer {{admin}}
+Content-Type: multipart/form-data; boundary=FaroLimite
+
+--FaroLimite
+Content-Disposition: form-data; name="archivo"; filename="cert_demo.p12"
+Content-Type: application/octet-stream
+
+< ../../tests/dorado/fixtures/cert_demo.p12
+--FaroLimite
+Content-Disposition: form-data; name="password"
+
+{{clave_cert}}
+--FaroLimite--
+
+### 4. Cargar los folios de facturas (CAF tipo 33) → 200. Sin empresa: 409 "sin_empresa";
+#    de otro RUT: 409 "caf_otra_empresa"; la segunda vez: 409 "caf_repetido"
+POST {{base}}/api/v1/caf
+Authorization: Bearer {{admin}}
+Content-Type: multipart/form-data; boundary=FaroLimite
+
+--FaroLimite
+Content-Disposition: form-data; name="archivo"; filename="caf_33.xml"
+Content-Type: application/octet-stream
+
+< ../../tests/dorado/fixtures/caf_33.xml
+--FaroLimite--
+
+### 5. Cargar los folios de boletas (CAF tipo 39) → 200
+POST {{base}}/api/v1/caf
+Authorization: Bearer {{admin}}
+Content-Type: multipart/form-data; boundary=FaroLimite
+
+--FaroLimite
+Content-Disposition: form-data; name="archivo"; filename="caf_39.xml"
+Content-Type: application/octet-stream
+
+< ../../tests/dorado/fixtures/caf_39.xml
+--FaroLimite--
+
+### 6. Revisar la empresa → certificado cargado y "produccion.falta" con lo pendiente para salir de demo
+GET {{base}}/api/v1/empresa
+Authorization: Bearer {{admin}}
+
+### 7. Folios disponibles por tipo, CAF en uso y vencimiento (6 meses)
+GET {{base}}/api/v1/empresa/folios
+Authorization: Bearer {{admin}}
+
+### 8. Crear el token de tu sistema → 201. La clave ("api_key", empieza con dte_) sale UNA vez:
+#    cópiala a FARO_TOKEN en http/.env para el flujo 2
+POST {{base}}/api/v1/apikeys
+Authorization: Bearer {{admin}}
+Content-Type: application/json
+
+{"nombre": "punto-de-venta"}

@@ -99,6 +99,12 @@ def instancia(cliente, admin):
             con.execute(f"DELETE FROM {tabla}")
     for sub in ("dtes", "pdfs"):
         shutil.rmtree(TMP / "storage" / sub, ignore_errors=True)
+    # Los CAF se cargan solo con la empresa creada (y de su RUT): si no hay, se crea la demo.
+    from core import empresa, negocios
+    from core.ambiente import ambiente_inicial
+    if empresa.obtener() is None:
+        negocios.agregar_negocio(1, RUT_EMISOR, razon_social="EMPRESA DEMO SPA",
+                                ambiente=ambiente_inicial())
     for tipo in (33, 56, 61):
         with open(FIXTURES / f"caf_{tipo}.xml", "rb") as f:
             r = cliente.post("/api/v1/caf", headers=admin, files={"archivo": (f"caf_{tipo}.xml", f, "text/xml")})

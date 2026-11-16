@@ -1,0 +1,77 @@
+# Flujo 3 — Administrar (ADMINISTRADOR): documentos, alertas, tokens y auditoría.
+#
+# Antes: los flujos 1 y 2. Crea su propio token de prueba ("caja-2") y lo revoca al final: el
+# FARO_TOKEN del flujo 2 no se toca.
+
+@base = {{$dotenv BASE_URL}}
+@clave = {{$dotenv FARO_CLAVE}}
+
+### 1. Iniciar sesión como administrador
+# @name login
+POST {{base}}/api/v1/auth/login
+Content-Type: application/json
+
+{"username": "admin", "password": "{{clave}}"}
+
+###
+@admin = {{login.response.body.access_token}}
+
+### 2. Todos los documentos (solo administrador; un token ve solo los suyos)
+GET {{base}}/api/v1/dte/documentos
+Authorization: Bearer {{admin}}
+
+### 3. Alertas del despacho al SII: sin veredicto, envíos fallidos, folios por anular (revisar a diario)
+GET {{base}}/api/v1/dte/alertas
+Authorization: Bearer {{admin}}
+
+### 4. Tokens existentes (sin sus claves)
+GET {{base}}/api/v1/apikeys
+Authorization: Bearer {{admin}}
+
+### 5. Crear un token de prueba → 201; la clave sale UNA vez
+# @name crear
+POST {{base}}/api/v1/apikeys
+Authorization: Bearer {{admin}}
+Content-Type: application/json
+
+{"nombre": "caja-2"}
+
+###
+@caja = {{crear.response.body.api_key}}
+@caja_id = {{crear.response.body.id}}
+
+### 6. El token se renueva a sí mismo → 200, mismo id, clave nueva (la anterior deja de valer ya)
+# @name renovar
+POST {{base}}/api/v1/apikeys/propia/renovar
+Authorization: Bearer {{caja}}
+
+###
+@caja_nueva = {{renovar.response.body.api_key}}
+
+### 7. La clave anterior → 401
+GET {{base}}/api/v1/auth/me
+Authorization: Bearer {{caja}}
+
+### 8. Auditoría: lo que hizo ese token (sin cuerpos ni secretos)
+GET {{base}}/api/v1/auditoria?actor=apikey:{{caja_id}}
+Authorization: Bearer {{admin}}
+
+### 9. Revocar el token → 200
+DELETE {{base}}/api/v1/apikeys/{{caja_id}}
+Authorization: Bearer {{admin}}
+
+### 10. Con el token revocado → 401
+GET {{base}}/api/v1/auth/me
+Authorization: Bearer {{caja_nueva}}
+
+### 11. Registro público cerrado → 401 sin token
+POST {{base}}/api/v1/auth/registro
+Content-Type: application/json
+
+{"username": "intruso", "password": "clave-de-prueba-intruso"}
+
+### 12. Login con clave mala: repítelo 5 veces → 401 ×4 y 429 (15 minutos para ese usuario desde tu IP)
+POST {{base}}/api/v1/auth/login
+Content-Type: application/json
+
+{"username": "persona-de-prueba", "password": "clave-equivocada"}

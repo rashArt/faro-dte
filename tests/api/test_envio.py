@@ -28,18 +28,12 @@ def negocio(instancia, admin):
     """EMPRESA DEMO SPA con el certificado ficticio y sus datos de emisor completos."""
     negocios = instancia.get("/api/v1/keystore/negocios", headers=admin).json()
     negocios = negocios.get("negocios", negocios) if isinstance(negocios, dict) else negocios
-    neg = next((n for n in negocios if n["rut"] == RUT_EMISOR), None)
-    if neg is None or not neg.get("cert_id"):
+    neg = next(n for n in negocios if n["rut"] == RUT_EMISOR)   # la crea `instancia`
+    if not neg.get("cert_id"):
         with open(FIXTURES / "cert_demo.p12", "rb") as f:
-            r = instancia.post("/api/v1/keystore/certificados", headers=admin,
-                               files={"archivo": ("cert_demo.p12", f, "application/x-pkcs12")},
-                               data={"password": CLAVE_CERT})
-        assert r.status_code == 201, r.text
-        if neg is None:
-            r = instancia.post("/api/v1/keystore/negocios", headers=admin,
-                               data={"rut": RUT_EMISOR, "cert_id": r.json()["id"]})
-            assert r.status_code in (200, 201), r.text
-            neg = r.json()
+            r = instancia.put("/api/v1/empresa/certificado", headers=admin, data={"password": CLAVE_CERT},
+                              files={"archivo": ("cert_demo.p12", f, "application/x-pkcs12")})
+        assert r.status_code == 200, r.text
     r = instancia.put(f"/api/v1/keystore/negocios/{neg['id']}", headers=admin, json=DATOS_NEGOCIO)
     assert r.status_code == 200, r.text
     return r.json()

@@ -110,8 +110,14 @@ El CAF queda en el ambiente actual de la empresa. Los CAF de certificación y de
 **distintos**: el SII los entrega por separado y uno no sirve en el otro ambiente. En modo demo
 se carga un CAF de prueba, que tampoco sirve fuera de demo.
 
-Un CAF de otra empresa, de otro tipo, dañado o **vencido** responde `422` con `codigo: "caf"`.
-Cargar dos veces el mismo CAF en el mismo ambiente responde `409` con `codigo: "caf_repetido"`.
+El CAF se carga **después de crear la empresa** (paso 1) y tiene que ser de su RUT:
+
+| Caso | Respuesta |
+|---|---|
+| Todavía no hay empresa | `409` con `codigo: "sin_empresa"` |
+| El CAF es de otro RUT | `409` con `codigo: "caf_otra_empresa"` (`detalle` trae los dos RUT) |
+| El mismo CAF dos veces en el mismo ambiente | `409` con `codigo: "caf_repetido"` |
+| Dañado o **vencido** | `422` con `codigo: "caf"` |
 
 ### Varios CAF del mismo tipo
 

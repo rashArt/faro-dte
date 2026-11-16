@@ -50,7 +50,7 @@ empresa cliente, con la API solo en la red interna y sin la interfaz gráfica a 
    │   └──────────────┘        ┌──────────────────┐                            │
    │                           │ faro (uvicorn,   │──────────────────────────────┼──► SII
    │                           │ 1 proceso)       │                            │   (maullín / palena)
-   │                           │ volumen: storage │                            │
+   │                           │ ./storage, ./logs│                            │
    │                           └────────┬─────────┘                            │
    │  red `faro-acme_interna`           │ (sin salida a Internet)              │
    │                           ┌────────┴─────────┐   ┌──────────────────┐     │
@@ -82,8 +82,15 @@ docker compose -f docker-compose.dev.yml up -d --build
 - `docker compose -f docker-compose.dev.yml down -v` borra la instancia local y vuelve a cero.
 - Para no escribir `-f`: `COMPOSE_FILE=docker-compose.dev.yml` en tu `.env`.
 - El compose de desarrollo usa PostgreSQL, como producción (base en `127.0.0.1:5432`, usuario
-  `faro`, clave `POSTGRES_PASSWORD` de tu `.env` o `faro-local`). SQLite queda comentado. El
-  manual de la API va como perfil (`--profile manual`, en `http://127.0.0.1:8001`).
+  `faro`, clave `POSTGRES_PASSWORD` de tu `.env` o `faro-local`). SQLite queda comentado.
+- El manual de la API (`manual/`) va en el mismo compose, como perfil: no se levanta con lo demás.
+
+  ```bash
+  docker compose -f docker-compose.dev.yml --profile manual up -d manual   # http://127.0.0.1:8001
+  docker compose -f docker-compose.dev.yml --profile manual stop manual    # bajarlo (Faro sigue)
+  ```
+
+  Se reconstruye solo al guardar un archivo de `manual/docs`.
 
 Desde la fase 6 la imagen corre sin privilegios. Un volumen creado con una imagen anterior (que
 corría como root) se corrige una vez:
@@ -152,7 +159,21 @@ mkdir -p /srv/clientes/acme && cd /srv/clientes/acme
 cp /srv/faro-dte/docker-compose.prod.yml docker-compose.yml
 cp /srv/faro-dte/docs/deploy/cliente.env.example .env
 chmod 600 .env
+mkdir -p storage logs && chown -R 10001:10001 storage logs
 ```
+
+**Los archivos quedan en la carpeta del cliente**, como `storage/` en Laravel:
+
+| Carpeta | Qué guarda |
+|---|---|
+| `storage/` | cada documento en `emisiones/<id>/v1/`: XML firmado, sobre para el SII y PDF; los CAF en `cafs/` |
+| `logs/` | el log de Faro (`dte_api.log`) |
+| volumen `pg-data` | la base PostgreSQL: se respalda con `pg_dump`, no copiando archivos |
+
+El `chown` es obligatorio: la imagen corre como el usuario `faro` (UID 10001), sin privilegios. Si
+la carpeta es de root, Faro no arranca (`PermissionError: /app/logs/dte_api.log`). Se hace una vez
+por carpeta; `respaldo.sh restaurar` lo hace solo en una carpeta nueva si corre como root. En el
+repositorio, `storage/` y `logs/` están en `.gitignore`.
 
 **3. `.env`.** Completa los valores entre `<>`. Los secretos son distintos por cliente:
 
@@ -233,7 +254,7 @@ cd /srv/clientes/acme
 /srv/faro-dte/tools/respaldo.sh respaldar
 ```
 
-Deja `respaldos/faro-acme-<fecha>.tar.gz` con la base (`pg_dump`), el volumen `storage/` (XML
+Deja `respaldos/faro-acme-<fecha>.tar.gz` con la base (`pg_dump`), la carpeta `storage/` (XML
 firmados y PDF), el `.env`, el `docker-compose.yml` y un `MANIFIESTO.txt` (versión, migración de
 Alembic, conteos). Antes de guardarlo comprueba que los dos volcados se puedan leer. Borra los
 respaldos de más de 30 días (`RETENCION_DIAS`, `0` para no borrar).

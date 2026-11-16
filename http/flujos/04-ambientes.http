@@ -1,20 +1,19 @@
-# Flujo 4 — Ambientes, cambio a producción y varios CAF (fase 7 de docs/deploy/PLAN.md).
+# Flujo 4 — Ambientes (ADMINISTRADOR): demo, certificación y producción, y varios CAF.
 #
-# Antes: el flujo 2 hasta el paso 4 (CAF, empresa y certificado ficticios, en modo demo). Requiere
-# la imagen de la fase 7: si /api/v1/empresa responde 404, reconstruye (docker compose up -d --build).
+# Antes: el flujo 1 (empresa, certificado y CAF ficticios, en modo demo).
 # Con la empresa ficticia (77777777-7), salir de demo SIEMPRE responde 409 "rut_ficticio": es un RUT
-# de demostración y se frena sin consultar al SII (L1, L14). Todos los PUT son solo del administrador.
+# de demostración y se frena sin consultar al SII (L1, L14). Con un RUT real, salir de demo valida
+# la empresa en el SII y pasar a producción exige requisitos (GET /empresa los lista).
 
+@base = {{$dotenv BASE_URL}}
 @clave = {{$dotenv FARO_CLAVE}}
-@base = http://127.0.0.1:8000
-@usuario = admin
 
 ### 1. Login de administrador
 # @name login
 POST {{base}}/api/v1/auth/login
 Content-Type: application/json
 
-{"username": "{{usuario}}", "password": "{{clave}}"}
+{"username": "admin", "password": "{{clave}}"}
 
 ###
 @token = {{login.response.body.access_token}}

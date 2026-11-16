@@ -20,6 +20,8 @@ from core.ambiente import AMBIENTES, ambiente_actual
 from core.auth import requerir_administrador, requerir_autenticacion
 from core.database import obtenerUno
 from core.caf import ManejadorCAF
+from core import empresa as empresa_instancia
+from core.rut import formatear_rut
 from core.errors import CAFError, ConflictoError, RecursoNoEncontrado, ValidacionError
 from core.models import (
     listar_dtes,
@@ -240,6 +242,15 @@ def post_registrar_caf(
         raise CAFError(f"No se pudo parsear el CAF: {e}")
 
     d = caf.datos
+
+    # Una empresa por instancia: el CAF es de ella o no sirve. Sin empresa no se sabe de quién es.
+    empresa = empresa_instancia.exigir()
+    rut_caf = formatear_rut(d.rut_emisor, con_puntos=False).upper()
+    if rut_caf != formatear_rut(empresa["rut"], con_puntos=False).upper():
+        raise ConflictoError(
+            f"El CAF es del RUT {rut_caf} y la empresa de esta instancia es {empresa['rut']}: "
+            "sus folios no se pueden usar aquí.", codigo="caf_otra_empresa",
+            detalle={"rut_caf": rut_caf, "rut_empresa": empresa["rut"]})
 
     # Los CAF anteriores del mismo tipo siguen activos: sus folios se usan hasta agotarse o
     # vencer, y después el motor pasa solo a este (core/models.py::_elegir_caf).

@@ -1,0 +1,123 @@
+# Flujo 2 — Emitir y consultar como TU SISTEMA (token de integración).
+#
+# Antes: el flujo 1 completo y FARO_TOKEN en http/.env (la "api_key" del paso 8 del flujo 1).
+# El emisor y el certificado no van en el cuerpo: Faro usa los de la empresa.
+# Cambia @venta para emitir una venta nueva (id_externo = tu identificador de la venta).
+
+@base = {{$dotenv BASE_URL}}
+@token = {{$dotenv FARO_TOKEN}}
+@venta = pedido-1
+
+### 1. ¿Quién soy? → "tipo": "apikey", "rol": "integracion"
+GET {{base}}/api/v1/auth/me
+Authorization: Bearer {{token}}
+
+### 2. Emitir una factura → 200, "estado": "generado", "envio": "simulacion" (en demo no sale al SII)
+# @name factura
+POST {{base}}/api/v1/dte/emitir
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "id_externo": "{{venta}}",
+  "dte": {
+    "tipo_dte": 33,
+    "receptor": {"rut": "76111111-6", "razon_social": "CLIENTE DEMO LTDA", "giro": "Comercio",
+                 "direccion": "Av Siempreviva 742", "comuna": "Santiago"},
+    "items": [{"numero_linea": 1, "nombre": "Servicio mensual", "cantidad": 1, "precio_unitario": 10000}]
+  }
+}
+
+### 3. Reintento con el MISMO cuerpo (se cortó la red) → 200, mismo dte_id y folio, "repetido": true
+POST {{base}}/api/v1/dte/emitir
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "id_externo": "{{venta}}",
+  "dte": {
+    "tipo_dte": 33,
+    "receptor": {"rut": "76111111-6", "razon_social": "CLIENTE DEMO LTDA", "giro": "Comercio",
+                 "direccion": "Av Siempreviva 742", "comuna": "Santiago"},
+    "items": [{"numero_linea": 1, "nombre": "Servicio mensual", "cantidad": 1, "precio_unitario": 10000}]
+  }
+}
+
+### 4. Mismo id_externo con OTRO monto → 409 "ya_emitido" (lo timbrado se corrige con nota de crédito)
+POST {{base}}/api/v1/dte/emitir
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "id_externo": "{{venta}}",
+  "dte": {
+    "tipo_dte": 33,
+    "receptor": {"rut": "76111111-6", "razon_social": "CLIENTE DEMO LTDA", "giro": "Comercio",
+                 "direccion": "Av Siempreviva 742", "comuna": "Santiago"},
+    "items": [{"numero_linea": 1, "nombre": "Servicio mensual", "cantidad": 1, "precio_unitario": 12000}]
+  }
+}
+
+### 5. Datos inválidos (giro de 80 caracteres; el SII admite 40) → 422 "validacion" y NO gasta folio
+POST {{base}}/api/v1/dte/emitir
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "id_externo": "{{venta}}-invalida",
+  "dte": {
+    "tipo_dte": 33,
+    "receptor": {"rut": "76111111-6", "razon_social": "CLIENTE DEMO LTDA",
+                 "giro": "GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG",
+                 "direccion": "Av Siempreviva 742", "comuna": "Santiago"},
+    "items": [{"numero_linea": 1, "nombre": "Servicio mensual", "cantidad": 1, "precio_unitario": 10000}]
+  }
+}
+
+### 6. Emitir una boleta (precio con IVA incluido; receptor 66666666-6 = consumidor final) → 200
+# @name boleta
+POST {{base}}/api/v1/dte/emitir
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "id_externo": "{{venta}}-boleta",
+  "dte": {
+    "tipo_dte": 39,
+    "receptor": {"rut": "66666666-6", "razon_social": "CLIENTE FINAL"},
+    "items": [{"numero_linea": 1, "nombre": "Cafe americano", "cantidad": 2, "precio_unitario": 2500}]
+  }
+}
+
+### 7. Estado de la factura → "generado" en demo; con envío activo: enviado → aceptado o rechazado
+GET {{base}}/api/v1/dte/{{factura.response.body.dte_id}}/estado
+Authorization: Bearer {{token}}
+
+### 8. El PDF de la factura (con su timbre)
+GET {{base}}/api/v1/dte/documentos/{{factura.response.body.dte_id}}/pdf
+Authorization: Bearer {{token}}
+
+### 9. Enviar a mano → 409 "ambiente_sin_sii" en demo (con envío activo: 200, "enviado")
+POST {{base}}/api/v1/dte/{{factura.response.body.dte_id}}/enviar
+Authorization: Bearer {{token}}
+
+### 10. Previsualizar sin emitir → 200; el PDF (pdf_b64) sale marcado BORRADOR y no gasta folio
+POST {{base}}/api/v1/dte/previsualizar
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "dte": {
+    "tipo_dte": 33,
+    "receptor": {"rut": "76111111-6", "razon_social": "CLIENTE DEMO LTDA", "giro": "Comercio",
+                 "direccion": "Av Siempreviva 742", "comuna": "Santiago"},
+    "items": [{"numero_linea": 1, "nombre": "Servicio mensual", "cantidad": 1, "precio_unitario": 10000}]
+  }
+}
+
+### 11. Lo que el token no puede: cambiar la empresa → 403 "autorizacion"
+PUT {{base}}/api/v1/empresa
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"rut": "77777777-7"}

@@ -39,11 +39,13 @@ Todas las respuestas de error tienen el mismo formato:
 | `folio` | 409 | Folio fuera de rango, ya usado, o no hay CAF para el tipo | No |
 | `envio_desactivado` | 409 | Se pidió enviar al SII en una instancia que no envía | No. Ver [Ambientes](ambientes.md) |
 | `ambiente_sin_sii` | 409 | Se pidió enviar al SII un documento emitido en modo demo | No. Ver [Ambientes](ambientes.md) |
+| `sin_empresa` | 409 | La instancia todavía no tiene empresa (por ejemplo, al cargar un CAF) | Después de `PUT /api/v1/empresa` |
 | `empresa_unica` | 409 | Se intentó crear otra empresa en la instancia | No: cada empresa tiene su instancia |
 | `requisitos_certificacion` | 409 | El SII no conoce el RUT de la empresa: no sale de demo. `detalle.falta` lo explica | Después de inscribir la empresa en el SII |
 | `requisitos_produccion` | 409 | Falta algo para pasar a producción. `detalle.falta` lo lista | Después de cumplirlo |
 | `caf_repetido` | 409 | Ese CAF ya está cargado en ese ambiente | No |
-| `caf` | 422 | El CAF es inválido, está dañado, es de otra empresa o de otro tipo | No |
+| `caf_otra_empresa` | 409 | El CAF es de otro RUT. `detalle` trae `rut_caf` y `rut_empresa` | No: carga el CAF de la empresa |
+| `caf` | 422 | El CAF es inválido, está dañado o vencido | No |
 | `certificado` | 422 | El certificado no carga: contraseña incorrecta o vencido | No: subir uno vigente |
 | `demasiadas_solicitudes` | 429 | Demasiados intentos fallidos de autenticación | Después de `Retry-After` |
 | `sii_comunicacion` | 502 | El SII no respondió (red, caída, tiempo agotado) | **Sí**. En envíos automáticos, Faro ya reintenta |

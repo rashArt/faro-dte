@@ -54,9 +54,12 @@ services:
     depends_on:
       migrar:
         condition: service_completed_successfully
+    # Carpetas de la carpeta del cliente (como storage/ en Laravel): se ven y se copian sin
+    # entrar al contenedor. Son del usuario de la imagen, antes del primer arranque:
+    #   mkdir -p storage logs && chown -R 10001:10001 storage logs
     volumes:
-      - faro-data:/app/storage        # XML firmados y PDF
-      - faro-logs:/app/logs
+      - ./storage:/app/storage        # XML firmados y PDF
+      - ./logs:/app/logs
     deploy:
       resources:
         limits:
@@ -105,9 +108,7 @@ services:
   #     - interna
 
 volumes:
-  faro-data:
-  faro-logs:
-  pg-data:
+  pg-data:                          # la base: se respalda con pg_dump (tools/respaldo.sh)
 
 networks:
   # Solo la instancia del cliente: base, migración y Faro. Sin salida a Internet.

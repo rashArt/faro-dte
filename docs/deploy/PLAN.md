@@ -416,7 +416,17 @@ El VPS deja de construir: baja una imagen publicada una vez por versión.
 - ✅ Corregido `OrquestadorDTE._caf_activo` (era `@staticmethod` y usaba `self.ambiente` desde la
   fase 7: el mundo de práctica fallaba con `NameError`). `servidor.yml` ahora corre
   `test_simulacion.py` y `auditar_publico.py`.
-- Pendiente fuera del código: primer VPS; despacho contra el SII de certificación con CAF y
+- ✅ **Primer VPS** (2026-11-15): imagen `1.0.0` detrás de Traefik en un subdominio de prueba, en
+  modo demo; los flujos `.http` corren completos contra él.
+- ✅ **El CAF exige la empresa** (`1.0.1`): sin empresa, `409 sin_empresa`; de otro RUT,
+  `409 caf_otra_empresa` (el manual decía `422 caf`, pero no se validaba). La suite crea la
+  empresa demo antes de cargar CAF.
+- ✅ **`storage/` y `logs/` como carpetas** del cliente en `docker-compose.prod.yml` (antes,
+  volúmenes con nombre), con `chown 10001` documentado; `respaldo.sh restaurar` las crea.
+- ✅ **Flujos `.http` reordenados** como una instancia nueva: `01-configurar` (administrador),
+  `02-emitir` (token), `03-administrar`, `04-ambientes`; sin el mundo de práctica. Todos leen
+  `BASE_URL` de `http/.env` (también `http/api/`), sin entornos de VS Code.
+- Pendiente fuera del código: despacho contra el SII de certificación con CAF y
   certificado reales; `rotar_claves.py` con PostgreSQL.
 
 ## Política de folios

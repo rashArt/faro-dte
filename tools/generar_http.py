@@ -160,9 +160,10 @@ def bloque(metodo: str, ruta: str, op: dict, esq: Esquemas) -> tuple[str, list[s
 
 ENCABEZADO = """# {titulo} — Faro API (motor Python)
 # GENERADO por tools/generar_http.py desde /openapi.json. No editar a mano: regenerar.
-# Requiere la extensión REST Client (humao.rest-client) y el entorno "local" (abajo a la
-# derecha en VS Code, o Ctrl+Alt+E). Claves en http/.env (copia http/env.ejemplo).
+# Requiere la extensión REST Client (humao.rest-client). Dirección y claves en http/.env
+# (copia http/env.ejemplo).
 
+@base = {{{{$dotenv BASE_URL}}}}
 @clave = {{{{$dotenv FARO_CLAVE}}}}
 @clave_cert = {{{{$dotenv FARO_CLAVE_CERT}}}}
 {variables}
@@ -171,7 +172,7 @@ ENCABEZADO = """# {titulo} — Faro API (motor Python)
 POST {{{{base}}}}/api/v1/auth/login
 Content-Type: application/json
 
-{{"username": "{{{{usuario}}}}", "password": "{{{{clave}}}}"}}
+{{"username": "admin", "password": "{{{{clave}}}}"}}
 
 ###
 @token = {{{{login.response.body.access_token}}}}

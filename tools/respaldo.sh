@@ -142,6 +142,11 @@ restaurar() {
         [ "$respuesta" = "$proy" ] || falla "cancelado"
     fi
 
+    # storage/ y logs/ son carpetas del cliente, del usuario de la imagen (UID 10001). En una
+    # carpeta nueva Docker las crearía como root y Faro no podría escribir.
+    mkdir -p storage logs
+    if [ "$(id -u)" = 0 ]; then chown 10001:10001 storage logs; fi
+
     dc up -d --wait db
     if [ "$(psql_db "SELECT to_regclass('public.dtes') IS NOT NULL")" = "t" ]; then
         echo "La base tiene datos: primero se respalda lo que hay."
